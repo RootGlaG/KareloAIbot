@@ -105,9 +105,12 @@
             filter: brightness(0.92);
         }
 
-        /* ─── ВЕРХНЯЯ НАВИГАЦИЯ ─── */
+        /* ─── ВЕРХНЯЯ НАВИГАЦИЯ (ДВА РЯДА, УДОБНЫЙ РАЗМЕР) ─── */
         .tab-bar {
-            display: flex;
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 6px;
+            padding: 8px;
             background-color: var(--sec-bg-color);
             border-bottom: 1px solid var(--border-color);
             flex-shrink: 0;
@@ -116,24 +119,34 @@
         }
 
         .tab-item {
-            flex: 1;
-            padding: 13px 2px;
+            padding: 10px 4px;
             text-align: center;
-            font-size: 12px;
+            font-size: 13px;
             font-weight: 700;
             color: var(--hint-color);
             cursor: pointer;
-            border-bottom: 3px solid transparent;
+            border-radius: var(--radius-sm);
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 5px;
             white-space: nowrap;
+            user-select: none;
         }
 
         .tab-item.active {
             color: var(--accent-color);
-            border-bottom-color: var(--accent-color);
-            background: rgba(240, 185, 11, 0.05);
+            border-color: var(--accent-color);
+            background: rgba(240, 185, 11, 0.12);
+            box-shadow: 0 2px 8px rgba(240, 185, 11, 0.15);
         }
         body.style-telegram .tab-item.active {
-            background: rgba(59, 130, 246, 0.08);
+            color: var(--accent-color);
+            border-color: var(--accent-color);
+            background: rgba(59, 130, 246, 0.15);
+            box-shadow: 0 2px 8px rgba(59, 130, 246, 0.18);
         }
 
         /* ─── ОСНОВНОЙ КОНТЕЙНЕР ─── */
