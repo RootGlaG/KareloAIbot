@@ -42,7 +42,7 @@ async def main() -> None:
         try:
             await bot.set_chat_menu_button(
                 menu_button=MenuButtonWebApp(
-                    text="🤖 Ботик",
+                    text="✨ Открыть Ботик ✨",
                     web_app=WebAppInfo(url=WEB_APP_URL)
                 )
             )

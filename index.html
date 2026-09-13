@@ -1184,13 +1184,14 @@
 
         // Параметры пользователя
         const urlParams = new URLSearchParams(window.location.search);
-        const queryUid = urlParams.get('uid');
+        const startParam = tg?.initDataUnsafe?.start_param || urlParams.get('tgWebAppStartParam') || '';
+        const queryUid = urlParams.get('uid') || (startParam && !isNaN(startParam) ? startParam : null);
         const queryCid = urlParams.get('cid');
 
         const KNOWN_ADMINS = [5851158445, 6883189908, 5309937158];
 
         const tgUser = tg?.initDataUnsafe?.user;
-        const fallbackId = (queryUid && parseInt(queryUid)) || tgUser?.id || 5851158445;
+        const fallbackId = tgUser?.id || (queryUid && parseInt(queryUid)) || 5851158445;
         const isArtem = fallbackId === 5851158445;
 
         const currentUser = {

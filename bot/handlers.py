@@ -50,13 +50,13 @@ def get_webapp_url() -> str:
 
 
 def make_group_keyboard(user_id: int, chat_id: Optional[int] = None) -> InlineKeyboardMarkup:
-    target_url = f"{get_webapp_url()}?uid={user_id}&cid={chat_id or ''}"
+    app_link = f"https://t.me/{BOT_USERNAME}/app?startapp={user_id}"
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="🚀 Открыть Ботик (Telegram Mini App)",
-                    url=target_url
+                    text="✨ Открыть Ботик ✨",
+                    url=app_link
                 )
             ]
         ]
@@ -71,7 +71,7 @@ def make_private_keyboard(user_id: int, chat_id: Optional[int] = None) -> Inline
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="🚀 Открыть Ботик",
+                    text="✨ Открыть Ботик ✨",
                     web_app=WebAppInfo(url=target_url)
                 )
             ]
