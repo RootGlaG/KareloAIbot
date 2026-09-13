@@ -275,6 +275,11 @@ async def cmd_set_botik(message: Message, bot: Bot) -> None:
     )
 
     try:
+        try:
+            await bot.unpin_chat_message(chat_id=message.chat.id)
+        except Exception:
+            pass
+
         sent_msg = await bot.send_message(
             chat_id=message.chat.id,
             message_thread_id=thread_id if thread_id != 0 else None,
@@ -291,6 +296,23 @@ async def cmd_set_botik(message: Message, bot: Bot) -> None:
             pass
     except Exception as e:
         logger.error("Error sending set_botik message: %s", e)
+
+
+# ──────────────────────────────────────────────
+# /del_botik — удаление/открепление кнопки
+# ──────────────────────────────────────────────
+@router.message(Command("del_botik"))
+async def cmd_del_botik(message: Message, bot: Bot) -> None:
+    if message.chat.type not in ("group", "supergroup"):
+        return
+    try:
+        await message.delete()
+    except Exception:
+        pass
+    try:
+        await bot.unpin_chat_message(chat_id=message.chat.id)
+    except Exception:
+        pass
 
 
 # ──────────────────────────────────────────────
