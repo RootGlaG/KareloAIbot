@@ -1,0 +1,26 @@
+﻿# Environment & Secrets
+.env
+.env.local
+
+# Database & runtime
+*.db
+*.sqlite3
+moderation.db
+
+# Python
+__pycache__/
+*.py[cod]
+*.class
+venv/
+.venv/
+env/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+Thumbs.db
+Desktop.ini
+.DS_Store
