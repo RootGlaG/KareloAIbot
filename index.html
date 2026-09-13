@@ -1,0 +1,1826 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Ботик — Telegram Mini App</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        /* ─── ПАЛИТРЫ И СТИЛИ ─── */
+        :root {
+            /* По умолчанию: Binance Dark */
+            --bg-color: #0B0E14;
+            --sec-bg-color: #181A20;
+            --card-bg: #1E2329;
+            --text-color: #EAECEF;
+            --hint-color: #848E9C;
+            --border-color: #2B313A;
+            --accent-color: #F0B90B;      /* Binance Gold */
+            --accent-hover: #FCD535;
+            --accent-text: #000000;
+            --btn-color: #F0B90B;
+            --btn-text-color: #000000;
+            --success-color: #0ECB81;    /* Binance Green */
+            --danger-color: #F6465D;     /* Binance Red */
+            --warning-color: #F0B90B;
+            --radius-sm: 8px;
+            --radius-md: 12px;
+            --radius-lg: 16px;
+        }
+
+        body.style-telegram {
+            --bg-color: #0F172A;
+            --sec-bg-color: #1E293B;
+            --card-bg: #1E293B;
+            --text-color: #F8FAFC;
+            --hint-color: #94A3B8;
+            --border-color: rgba(255, 255, 255, 0.1);
+            --accent-color: #3B82F6;
+            --accent-hover: #60A5FA;
+            --accent-text: #FFFFFF;
+            --btn-color: #3B82F6;
+            --btn-text-color: #FFFFFF;
+            --success-color: #10B981;
+            --danger-color: #EF4444;
+            --warning-color: #F59E0B;
+        }
+
+        body.theme-light {
+            --bg-color: #FAFAFA;
+            --sec-bg-color: #FFFFFF;
+            --card-bg: #FFFFFF;
+            --text-color: #181A20;
+            --hint-color: #707A8A;
+            --border-color: #EAECEF;
+            --accent-color: #F0B90B;
+            --accent-hover: #E0A800;
+            --accent-text: #000000;
+            --btn-color: #F0B90B;
+            --btn-text-color: #000000;
+        }
+        body.theme-light.style-telegram {
+            --accent-color: #2481CC;
+            --accent-hover: #1D68A5;
+            --btn-color: #2481CC;
+            --btn-text-color: #FFFFFF;
+            --border-color: #E2E8F0;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            user-select: none;
+        }
+
+        /* ─── АНИМАЦИИ ПЕРЕХОДОВ ─── */
+        @keyframes tabFadeSlide {
+            0% { opacity: 0; transform: translateY(6px); }
+            100% { opacity: 1; transform: translateY(0); }
+        }
+
+        @keyframes pulseOnline {
+            0% { transform: scale(0.95); opacity: 0.8; }
+            50% { transform: scale(1.15); opacity: 1; }
+            100% { transform: scale(0.95); opacity: 0.8; }
+        }
+
+        /* Анимации нажатий на всех кнопках и элементах */
+        button, .tab-item, .member-item, .t-btn, .chat-sug-chip {
+            transition: transform 0.12s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.15s ease, background 0.15s ease;
+        }
+        button:active, .tab-item:active, .member-item:active, .t-btn:active, .chat-sug-chip:active {
+            transform: scale(0.96);
+            filter: brightness(0.92);
+        }
+
+        /* ─── ВЕРХНЯЯ НАВИГАЦИЯ ─── */
+        .tab-bar {
+            display: flex;
+            background-color: var(--sec-bg-color);
+            border-bottom: 1px solid var(--border-color);
+            flex-shrink: 0;
+            position: relative;
+            z-index: 10;
+        }
+
+        .tab-item {
+            flex: 1;
+            padding: 13px 2px;
+            text-align: center;
+            font-size: 12px;
+            font-weight: 700;
+            color: var(--hint-color);
+            cursor: pointer;
+            border-bottom: 3px solid transparent;
+            white-space: nowrap;
+        }
+
+        .tab-item.active {
+            color: var(--accent-color);
+            border-bottom-color: var(--accent-color);
+            background: rgba(240, 185, 11, 0.05);
+        }
+        body.style-telegram .tab-item.active {
+            background: rgba(59, 130, 246, 0.08);
+        }
+
+        /* ─── ОСНОВНОЙ КОНТЕЙНЕР ─── */
+        .main-container {
+            flex: 1;
+            overflow-y: auto;
+            padding: 12px;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+        }
+
+        .tab-content {
+            display: none;
+            flex-direction: column;
+            gap: 12px;
+            height: 100%;
+        }
+
+        .tab-content.active {
+            display: flex;
+            animation: tabFadeSlide 0.22s cubic-bezier(0.1, 0.9, 0.2, 1) forwards;
+        }
+
+        .card {
+            background-color: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            padding: 14px;
+        }
+
+        .card-title {
+            font-size: 14px;
+            font-weight: 700;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            color: var(--text-color);
+        }
+
+        /* ─── 1. ВКЛАДКА: ПРОФИЛЬ С АВАТАРКОЙ ─── */
+        .user-header {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+        }
+        .avatar-container {
+            position: relative;
+            width: 52px;
+            height: 52px;
+            flex-shrink: 0;
+        }
+        .avatar-photo {
+            width: 52px;
+            height: 52px;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 2px solid var(--accent-color);
+            box-shadow: 0 4px 14px rgba(240, 185, 11, 0.25);
+        }
+        .avatar-circle {
+            width: 52px;
+            height: 52px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, var(--accent-color), #8B5CF6);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            font-weight: bold;
+            color: #000;
+            border: 2px solid var(--accent-color);
+        }
+        .online-dot {
+            position: absolute;
+            bottom: 1px;
+            right: 1px;
+            width: 13px;
+            height: 13px;
+            border-radius: 50%;
+            background-color: var(--success-color);
+            border: 2px solid var(--card-bg);
+            box-shadow: 0 0 6px var(--success-color);
+            animation: pulseOnline 2s infinite ease-in-out;
+        }
+
+        .user-details h3 {
+            font-size: 16px;
+            font-weight: 800;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .user-details p {
+            font-size: 12px;
+            color: var(--hint-color);
+            margin-top: 2px;
+        }
+        .user-badge-role {
+            font-size: 10px;
+            font-weight: 700;
+            padding: 2px 6px;
+            border-radius: 4px;
+            background: rgba(240, 185, 11, 0.18);
+            color: var(--accent-color);
+        }
+
+        .warn-indicator {
+            padding: 16px;
+            border-radius: var(--radius-md);
+            text-align: center;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            align-items: center;
+        }
+        .warn-indicator.good {
+            background: rgba(14, 203, 129, 0.12);
+            border: 1px solid var(--success-color);
+        }
+        .warn-indicator.warning {
+            background: rgba(240, 185, 11, 0.15);
+            border: 1px solid var(--warning-color);
+        }
+        .warn-indicator.danger {
+            background: rgba(246, 70, 93, 0.15);
+            border: 1px solid var(--danger-color);
+        }
+        .warn-counter {
+            font-size: 32px;
+            font-weight: 800;
+        }
+        .warn-title {
+            font-size: 15px;
+            font-weight: 700;
+        }
+        .warn-desc {
+            font-size: 12px;
+            color: var(--hint-color);
+            line-height: 1.4;
+        }
+
+        .history-item {
+            padding: 8px 10px;
+            border-bottom: 1px solid var(--border-color);
+            font-size: 12px;
+        }
+        .history-item:last-child {
+            border-bottom: none;
+        }
+        .history-meta {
+            display: flex;
+            justify-content: space-between;
+            color: var(--hint-color);
+            font-size: 11px;
+            margin-bottom: 3px;
+        }
+        .history-reason {
+            font-weight: 700;
+            color: var(--accent-color);
+        }
+        .history-text {
+            font-style: italic;
+            color: var(--text-color);
+            opacity: 0.9;
+            background: rgba(0,0,0,0.25);
+            padding: 5px 8px;
+            border-radius: var(--radius-sm);
+            margin-top: 3px;
+            word-break: break-word;
+        }
+
+        .btn-primary {
+            background: var(--btn-color);
+            color: var(--btn-text-color);
+            border: none;
+            border-radius: var(--radius-sm);
+            padding: 11px 16px;
+            font-size: 13px;
+            font-weight: 700;
+            cursor: pointer;
+            width: 100%;
+        }
+
+        /* ─── 2. ЧАТ С БОТИКОМ ─── */
+        .chat-container {
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+            position: relative;
+        }
+        .chat-messages {
+            flex: 1;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            padding-bottom: 8px;
+        }
+        .chat-bubble {
+            max-width: 84%;
+            padding: 10px 14px;
+            border-radius: var(--radius-lg);
+            font-size: 13px;
+            line-height: 1.4;
+            word-break: break-word;
+        }
+        .chat-bubble.bot {
+            align-self: flex-start;
+            background-color: var(--sec-bg-color);
+            border-bottom-left-radius: 4px;
+            border: 1px solid var(--border-color);
+        }
+        .chat-bubble.user {
+            align-self: flex-end;
+            background-color: var(--accent-color);
+            color: var(--accent-text);
+            border-bottom-right-radius: 4px;
+            font-weight: 600;
+        }
+        .chat-typing {
+            font-size: 11px;
+            color: var(--hint-color);
+            font-style: italic;
+            display: none;
+            padding: 2px 4px;
+        }
+
+        .chat-suggestions-bar {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            overflow-x: auto;
+            padding: 4px 0;
+            scrollbar-width: none;
+            flex-shrink: 0;
+        }
+        .chat-suggestions-bar::-webkit-scrollbar { display: none; }
+        .chat-sug-chip {
+            background: var(--sec-bg-color);
+            border: 1px solid var(--border-color);
+            color: var(--hint-color);
+            font-size: 11px;
+            padding: 4px 9px;
+            border-radius: 12px;
+            white-space: nowrap;
+            cursor: pointer;
+        }
+
+        .chat-input-bar {
+            display: flex;
+            gap: 8px;
+            padding-top: 6px;
+            border-top: 1px solid var(--border-color);
+            flex-shrink: 0;
+        }
+        .chat-input {
+            flex: 1;
+            padding: 10px 14px;
+            border-radius: 20px;
+            border: 1px solid var(--border-color);
+            background: var(--sec-bg-color);
+            color: var(--text-color);
+            font-size: 13px;
+            outline: none;
+        }
+        .chat-input:focus {
+            border-color: var(--accent-color);
+        }
+        .chat-send-btn {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background-color: var(--accent-color);
+            color: var(--accent-text);
+            border: none;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: bold;
+        }
+
+        /* ─── 3. ТЕТРИС (БЕЗ СКРОЛЛА + ПК КЛАВИАТУРА) ─── */
+        #tab-tetris {
+            overflow: hidden !important;
+            touch-action: none;
+            justify-content: space-between;
+            height: 100%;
+            padding-bottom: 4px;
+        }
+        .tetris-wrapper {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: space-between;
+            height: 100%;
+            width: 100%;
+            touch-action: none;
+        }
+        .tetris-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            width: 100%;
+            max-width: 280px;
+            font-size: 13px;
+            font-weight: 700;
+            padding: 2px 4px;
+        }
+        .t-badge {
+            background: var(--sec-bg-color);
+            border: 1px solid var(--border-color);
+            padding: 3px 8px;
+            border-radius: var(--radius-sm);
+        }
+        canvas#tetris {
+            background-color: #07090E;
+            border: 2px solid var(--border-color);
+            border-radius: var(--radius-sm);
+            box-shadow: 0 4px 14px rgba(0,0,0,0.5);
+            touch-action: none;
+            max-height: 48vh;
+            width: auto;
+        }
+        .tetris-controls {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 6px;
+            width: 100%;
+            max-width: 280px;
+        }
+        .t-btn {
+            background: var(--sec-bg-color);
+            border: 1px solid var(--border-color);
+            color: var(--text-color);
+            border-radius: var(--radius-sm);
+            height: 44px;
+            font-size: 18px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+        }
+        .t-btn:active {
+            background: var(--accent-color);
+            color: var(--accent-text);
+        }
+        .pc-hint {
+            font-size: 10px;
+            color: var(--hint-color);
+            text-align: center;
+        }
+
+        /* ─── 4. АДМИНКА (ВСЕ УЧАСТНИКИ + ОНЛАЙН СТАТУС) ─── */
+        .stat-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 8px;
+            margin-bottom: 4px;
+        }
+        .stat-box {
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-sm);
+            padding: 10px;
+            text-align: center;
+        }
+        .stat-num {
+            font-size: 20px;
+            font-weight: 800;
+            color: var(--accent-color);
+        }
+        .stat-label {
+            font-size: 11px;
+            color: var(--hint-color);
+            margin-top: 2px;
+        }
+
+        .member-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 8px 6px;
+            border-bottom: 1px solid var(--border-color);
+            cursor: pointer;
+            gap: 10px;
+        }
+        .member-avatar-mini {
+            position: relative;
+            width: 38px;
+            height: 38px;
+            flex-shrink: 0;
+        }
+        .member-avatar-img {
+            width: 38px;
+            height: 38px;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 1px solid var(--border-color);
+        }
+        .mini-online-dot {
+            position: absolute;
+            bottom: 0;
+            right: 0;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background-color: var(--success-color);
+            border: 2px solid var(--card-bg);
+        }
+        .mini-offline-dot {
+            position: absolute;
+            bottom: 0;
+            right: 0;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background-color: var(--hint-color);
+            border: 2px solid var(--card-bg);
+        }
+
+        .member-info {
+            flex: 1;
+            overflow: hidden;
+        }
+        .member-name {
+            font-weight: 700;
+            font-size: 13px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .member-sub {
+            font-size: 11px;
+            color: var(--hint-color);
+            margin-top: 1px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .badge-role {
+            padding: 1px 5px;
+            border-radius: 4px;
+            font-size: 9px;
+            font-weight: 700;
+        }
+        .badge-admin {
+            background: rgba(240, 185, 11, 0.2);
+            color: var(--accent-color);
+        }
+        .badge-user {
+            background: rgba(132, 142, 156, 0.15);
+            color: var(--hint-color);
+        }
+
+        /* ─── 5. ШТОРКА (BOTTOM SHEET) ─── */
+        .bottom-sheet-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            backdrop-filter: blur(4px);
+            z-index: 100;
+            display: none;
+            opacity: 0;
+            transition: opacity 0.25s ease;
+        }
+        .bottom-sheet-overlay.active {
+            display: block;
+            opacity: 1;
+        }
+
+        .bottom-sheet {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            max-height: 85vh;
+            background: var(--sec-bg-color);
+            border-top: 1px solid var(--border-color);
+            border-top-left-radius: 20px;
+            border-top-right-radius: 20px;
+            padding: 16px 16px 28px 16px;
+            box-shadow: 0 -8px 30px rgba(0, 0, 0, 0.6);
+            z-index: 101;
+            transform: translateY(100%);
+            transition: transform 0.3s cubic-bezier(0.1, 0.9, 0.2, 1);
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        .bottom-sheet.active {
+            transform: translateY(0);
+        }
+
+        .sheet-drag-handle {
+            width: 36px;
+            height: 4px;
+            background: var(--border-color);
+            border-radius: 2px;
+            margin: 0 auto 4px auto;
+        }
+
+        .sheet-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .sheet-user-title {
+            font-size: 15px;
+            font-weight: 800;
+        }
+        .sheet-close-btn {
+            background: transparent;
+            border: none;
+            color: var(--hint-color);
+            font-size: 20px;
+            cursor: pointer;
+            padding: 4px 8px;
+        }
+
+        .time-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 6px;
+            margin-top: 6px;
+        }
+        .time-btn {
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            color: var(--text-color);
+            padding: 8px 4px;
+            border-radius: var(--radius-sm);
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            text-align: center;
+        }
+        .time-btn.active {
+            background: var(--accent-color);
+            color: var(--accent-text);
+            border-color: var(--accent-color);
+            font-weight: 800;
+        }
+
+        .unmute-options {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            margin-top: 6px;
+        }
+        .radio-label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+            cursor: pointer;
+            background: var(--card-bg);
+            padding: 8px 12px;
+            border-radius: var(--radius-sm);
+            border: 1px solid var(--border-color);
+        }
+
+        /* ─── 6. НАСТРОЙКИ ─── */
+        .setting-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 0;
+            border-bottom: 1px solid var(--border-color);
+        }
+        .setting-row:last-child {
+            border-bottom: none;
+        }
+        .setting-info h4 {
+            font-size: 13px;
+            font-weight: 700;
+        }
+        .setting-info p {
+            font-size: 11px;
+            color: var(--hint-color);
+            margin-top: 2px;
+        }
+
+        .theme-select-btns {
+            display: flex;
+            gap: 6px;
+        }
+        .opt-btn {
+            padding: 6px 12px;
+            border-radius: var(--radius-sm);
+            border: 1px solid var(--border-color);
+            background: var(--sec-bg-color);
+            color: var(--text-color);
+            font-size: 11px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+        .opt-btn.active {
+            background: var(--accent-color);
+            color: var(--accent-text);
+            border-color: var(--accent-color);
+            font-weight: 700;
+        }
+    </style>
+</head>
+<body class="style-binance">
+
+    <!-- Верхняя навигация: кнопка «Профиль» вместо «Варны» -->
+    <div class="tab-bar">
+        <div class="tab-item active" onclick="switchTab('tab-status')">👤 Профиль</div>
+        <div class="tab-item" onclick="switchTab('tab-chat')">💬 Чат</div>
+        <div class="tab-item" onclick="switchTab('tab-feedback')">💡 Идеи / Баги</div>
+        <div class="tab-item" onclick="switchTab('tab-tetris')">🎮 Тетрис</div>
+        <div class="tab-item" id="nav-admin" onclick="switchTab('tab-admin')">📊 Админка</div>
+        <div class="tab-item" onclick="switchTab('tab-settings')">⚙️ Опции</div>
+    </div>
+
+    <!-- Основной контейнер -->
+    <div class="main-container">
+
+        <!-- 1. ВКЛАДКА: ПРОФИЛЬ (С РЕАЛЬНОЙ АВАТАРКОЙ) -->
+        <div id="tab-status" class="tab-content active">
+            <div class="card">
+                <div class="user-header">
+                    <div class="avatar-container">
+                        <img id="user-avatar-img" class="avatar-photo" alt="Avatar"
+                             onerror="this.style.display='none'; document.getElementById('user-avatar-placeholder').style.display='flex';">
+                        <div id="user-avatar-placeholder" class="avatar-circle">👤</div>
+                        <div class="online-dot" title="В сети"></div>
+                    </div>
+                    <div class="user-details">
+                        <h3 id="user-name">
+                            <span>Загрузка...</span>
+                            <span class="user-badge-role" id="user-role-badge">Участник</span>
+                        </h3>
+                        <p id="user-handle">@username</p>
+                        <p id="user-id-badge" style="font-size: 11px; opacity: 0.6;">ID: ... • 🟢 В сети</p>
+                    </div>
+                </div>
+            </div>
+
+            <div id="warn-box" class="warn-indicator good">
+                <div class="warn-counter" id="warn-count">0 / 2</div>
+                <div class="warn-title" id="warn-title">Нарушений нет ✅</div>
+                <div class="warn-desc" id="warn-desc">Вы соблюдаете правила супергруппы. Спасибо за порядок!</div>
+            </div>
+
+            <div class="card">
+                <div class="card-title">📜 История нарушений</div>
+                <div id="history-list">
+                    <div style="color: var(--hint-color); font-size: 12px; text-align: center; padding: 10px;">
+                        Нарушений не зафиксировано 🎉
+                    </div>
+                </div>
+            </div>
+
+            <button class="btn-primary" onclick="loadUserStatus(); playSound('click');">
+                🔄 Обновить профиль
+            </button>
+        </div>
+
+        <!-- 2. ВКЛАДКА: ЧАТ С БОТИКОМ -->
+        <div id="tab-chat" class="tab-content">
+            <div class="chat-container">
+                <div class="chat-messages" id="chat-messages">
+                    <div class="chat-bubble bot">
+                        👋 Привет! Я <b>Ботик</b> — ИИ-модератор супергруппы.<br><br>
+                        Я слежу за порядком в чате и могу ответить на любые вопросы. Чем могу помочь?
+                    </div>
+                </div>
+                <div id="chat-typing" class="chat-typing">Ботик печатает... 💭</div>
+
+                <!-- Компактные подсказки -->
+                <div class="chat-suggestions-bar">
+                    <button class="chat-sug-chip" onclick="askQuick('Правила чата')">📜 Правила</button>
+                    <button class="chat-sug-chip" onclick="askQuick('За что дают мут?')">🔇 За что мут?</button>
+                    <button class="chat-sug-chip" onclick="askQuick('Как снять предупреждение?')">⚠️ Снять варн</button>
+                    <button class="chat-sug-chip" onclick="askQuick('Расскажи анекдот')">😄 Анекдот</button>
+                </div>
+
+                <div class="chat-input-bar">
+                    <input type="text" id="chat-input" class="chat-input" placeholder="Напишите Ботику..." onkeydown="if(event.key==='Enter') sendChatMessage()">
+                    <button class="chat-send-btn" onclick="sendChatMessage()">➤</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- ВКЛАДКА: ПРОБЛЕМЫ И ИДЕИ ДЛЯ БОТА -->
+        <div id="tab-feedback" class="tab-content">
+            <div class="card">
+                <div class="card-title">💡 Сообщить о проблеме или идее</div>
+                <p style="font-size: 12px; color: var(--hint-color); margin-bottom: 12px; line-height: 1.4;">
+                    Нашли ошибку в Ботике, некорректный мут или у вас есть крутая идея по улучшению? Напишите сюда!
+                    <b>Искусственный интеллект</b> проанализирует и структурирует ваше обращение, после чего передаст его в топик <b>«Идеи»</b> супергруппы.
+                </p>
+
+                <div style="display: flex; flex-direction: column; gap: 8px;">
+                    <textarea id="feedback-input" class="chat-input" rows="5"
+                              placeholder="Опишите проблему или предложение (например: 'Тетрис иногда застревает на мобильном' или 'Добавьте звуки победы')..."
+                              style="resize: vertical; font-family: inherit; font-size: 13px; line-height: 1.4; border-radius: 8px; padding: 10px;"></textarea>
+
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 4px;">
+                        <span id="feedback-chars" style="font-size: 11px; color: var(--hint-color);">Мин. 5 символов</span>
+                        <button onclick="submitFeedback()" id="btn-send-feedback" class="btn-primary" style="width: auto; padding: 8px 18px; font-size: 13px;">
+                            🚀 Отправить в «Идеи»
+                        </button>
+                    </div>
+
+                    <div id="feedback-status" style="font-size: 12px; padding: 10px; border-radius: 6px; display: none; margin-top: 8px; line-height: 1.4;"></div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-title">📌 Как это работает?</div>
+                <div style="font-size: 12px; color: var(--hint-color); line-height: 1.5;">
+                    1. Вы пишете текст своими словами.<br>
+                    2. Нейросеть <b>Gemini 3.6 Flash</b> выделяет суть, формулирует технические подробности и рекомендации.<br>
+                    3. Готовый репорт отправляется в ветку <b>«Идеи»</b> супергруппы с указанием вашего профиля.
+                </div>
+            </div>
+        </div>
+
+        <!-- 3. ВКЛАДКА: ТЕТРИС (БЕЗ СКРОЛЛА + ПК УПРАВЛЕНИЕ) -->
+        <div id="tab-tetris" class="tab-content">
+            <div class="tetris-wrapper">
+                <div class="tetris-header">
+                    <span class="t-badge">Счёт: <b id="t-score" style="color: var(--accent-color);">0</b></span>
+                    <span class="t-badge">Рекорд: <b id="t-high">0</b></span>
+                    <button id="t-start" style="background: var(--accent-color); color: var(--accent-text); border: none; padding: 4px 10px; border-radius: 6px; font-weight: bold; cursor: pointer;">Старт</button>
+                </div>
+
+                <canvas id="tetris" width="200" height="400"></canvas>
+
+                <div class="tetris-controls">
+                    <button class="t-btn" id="btn-left">◀️</button>
+                    <button class="t-btn" id="btn-rotate">🔄</button>
+                    <button class="t-btn" id="btn-right">▶️</button>
+                    <button class="t-btn" id="btn-down">⬇️</button>
+                </div>
+
+                <div class="pc-hint">
+                    ⌨️ <b>ПК управление:</b> Стрелки / A, D, W, S, Пробел (сброс), P (пауза)
+                </div>
+            </div>
+        </div>
+
+        <!-- 4. ВКЛАДКА: АДМИНКА (ВСЕ УЧАСТНИКИ + ОНЛАЙН СТАТУС) -->
+        <div id="tab-admin" class="tab-content">
+            <div id="admin-forbidden-card" class="card" style="display: none; text-align: center; padding: 36px 16px;">
+                <div style="font-size: 48px; margin-bottom: 12px;">🔒</div>
+                <h3 style="margin-bottom: 8px;">Доступ только для администраторов</h3>
+                <p style="color: var(--hint-color); font-size: 13px; line-height: 1.4; max-width: 320px; margin: 0 auto;">
+                    Панель управления участниками супергруппы.
+                </p>
+                <button onclick="loadUserStatus(); loadAdminStats();" class="btn-primary" style="margin-top: 16px; width: auto; padding: 10px 20px;">
+                    🔄 Проверить статус админа
+                </button>
+            </div>
+
+            <div id="admin-content-box" style="display: flex; flex-direction: column; gap: 12px;">
+                <div class="stat-grid">
+                    <div class="stat-box">
+                        <div class="stat-num" id="stat-checked">0</div>
+                        <div class="stat-label">Проверено сообщений</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-num" id="stat-violations" style="color: var(--danger-color);">0</div>
+                        <div class="stat-label">Нарушений пресечено</div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-title">
+                        <span>👥 Список участников (<span id="members-count-badge">0</span>/<span id="total-members-badge">17</span>)</span>
+                        <button onclick="loadAdminStats(); playSound('click');" style="background:none; border:none; color:var(--accent-color); font-size:12px; font-weight:bold; cursor:pointer;">🔄 Обновить</button>
+                    </div>
+
+                    <!-- Быстрый поиск / добавление по @username или ID -->
+                    <div style="display: flex; gap: 6px; margin-bottom: 8px;">
+                        <input type="text" id="add-member-input" class="chat-input" placeholder="@username или ID участника..." style="padding: 6px 10px; font-size: 12px; border-radius: 6px;">
+                        <button onclick="addMemberById()" class="btn-primary" style="width: auto; padding: 6px 12px; font-size: 11px;">➕ Добавить</button>
+                    </div>
+                    <div id="add-member-status" style="font-size: 11px; margin-bottom: 6px; display: none;"></div>
+
+                    <div id="members-list" style="max-height: 380px; overflow-y: auto;">
+                        <div style="color: var(--hint-color); font-size: 12px; text-align: center; padding: 12px;">
+                            Загрузка участников...
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 5. ВКЛАДКА: НАСТРОЙКИ (ТЕМЫ + ЗВУКИ) -->
+        <div id="tab-settings" class="tab-content">
+            <div class="card">
+                <div class="card-title">🎨 Оформление интерфейса</div>
+
+                <div class="setting-row">
+                    <div class="setting-info">
+                        <h4>Тема</h4>
+                        <p>Тёмный или светлый режим</p>
+                    </div>
+                    <div class="theme-select-btns">
+                        <button class="opt-btn" id="btn-theme-dark" onclick="setTheme('dark')">🌙 Тёмная</button>
+                        <button class="opt-btn" id="btn-theme-light" onclick="setTheme('light')">☀️ Светлая</button>
+                    </div>
+                </div>
+
+                <div class="setting-row">
+                    <div class="setting-info">
+                        <h4>Стиль приложения</h4>
+                        <p>Цветовая схема</p>
+                    </div>
+                    <div class="theme-select-btns">
+                        <button class="opt-btn active" id="btn-style-binance" onclick="setStyle('binance')">🟡 Binance</button>
+                        <button class="opt-btn" id="btn-style-telegram" onclick="setStyle('telegram')">🔵 Telegram</button>
+                    </div>
+                </div>
+
+                <div class="setting-row">
+                    <div class="setting-info">
+                        <h4>🔊 Звуковые эффекты</h4>
+                        <p>Звуки кликов, шторки и действий</p>
+                    </div>
+                    <div class="theme-select-btns">
+                        <button class="opt-btn active" id="btn-sound-on" onclick="setSound(true)">Вкл</button>
+                        <button class="opt-btn" id="btn-sound-off" onclick="setSound(false)">Выкл</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-title">ℹ️ О приложении</div>
+                <div style="font-size: 12px; color: var(--hint-color); line-height: 1.5;">
+                    <b>Ботик AI Moderator</b> v2.5<br>
+                    Супергруппа: <code>-1003955632241</code><br>
+                    Нейросеть: <b>Gemini 3.6 Flash</b><br>
+                    Анимации и звуки: Web Audio API Synthesizer.
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- ─── ШТОРКА МОДЕРАЦИИ ─── -->
+    <div class="bottom-sheet-overlay" id="sheet-overlay" onclick="closeSheet()"></div>
+    <div class="bottom-sheet" id="bottom-sheet">
+        <div class="sheet-drag-handle"></div>
+        <div class="sheet-header">
+            <div>
+                <div class="sheet-user-title" id="sheet-user-name">Имя Участника</div>
+                <div style="font-size: 11px; color: var(--hint-color);" id="sheet-user-id">ID: 12345678</div>
+            </div>
+            <button class="sheet-close-btn" onclick="closeSheet()">✕</button>
+        </div>
+
+        <div id="sheet-warn-badge" style="background: rgba(240, 185, 11, 0.15); color: var(--warning-color); padding: 6px 12px; border-radius: var(--radius-sm); font-size: 12px; font-weight: bold; text-align: center;">
+            Предупреждений: 0/2
+        </div>
+
+        <!-- Выдать варн -->
+        <button class="btn-primary" style="background: var(--warning-color); color: #000;" onclick="submitSheetAction('warn')">
+            ⚠️ Выдать предупреждение (+1 варн)
+        </button>
+
+        <!-- Замутить -->
+        <div class="card" style="padding: 10px; background: rgba(0,0,0,0.2);">
+            <div style="font-size: 13px; font-weight: 700; display: flex; justify-content: space-between;">
+                <span>🔇 Замутить участника</span>
+                <span id="selected-time-label" style="color: var(--accent-color); font-size: 12px;">1 час</span>
+            </div>
+            <div class="time-grid">
+                <button class="time-btn active" data-sec="3600" onclick="selectMuteTime(3600, '1 час', this)">1 ч</button>
+                <button class="time-btn" data-sec="7200" onclick="selectMuteTime(7200, '2 часа', this)">2 ч</button>
+                <button class="time-btn" data-sec="10800" onclick="selectMuteTime(10800, '3 часа', this)">3 ч</button>
+                <button class="time-btn" data-sec="14400" onclick="selectMuteTime(14400, '4 часа', this)">4 ч</button>
+                <button class="time-btn" data-sec="18000" onclick="selectMuteTime(18000, '5 часов', this)">5 ч</button>
+                <button class="time-btn" data-sec="86400" onclick="selectMuteTime(86400, '24 часа', this)">24 ч</button>
+                <button class="time-btn" data-sec="259200" onclick="selectMuteTime(259200, '3 дня', this)">3 дня</button>
+                <button class="time-btn" data-sec="604800" onclick="selectMuteTime(604800, '1 неделю', this)">Неделя</button>
+            </div>
+            <button class="btn-primary" style="background: var(--danger-color); color: #fff; margin-top: 8px;" onclick="submitSheetAction('mute')">
+                🔇 Применить мут
+            </button>
+        </div>
+
+        <!-- Снять ограничения -->
+        <div class="card" style="padding: 10px; background: rgba(0,0,0,0.2);">
+            <div style="font-size: 13px; font-weight: 700; margin-bottom: 6px;">🔓 Снять ограничения</div>
+            <div class="unmute-options">
+                <label class="radio-label">
+                    <input type="radio" name="unmute-choice" value="all" checked>
+                    <span>Снять всё (размут + сброс варнов 0/2)</span>
+                </label>
+                <label class="radio-label">
+                    <input type="radio" name="unmute-choice" value="mute_only">
+                    <span>Снять только мут (сохранить варны)</span>
+                </label>
+                <label class="radio-label">
+                    <input type="radio" name="unmute-choice" value="warnings_only">
+                    <span>Сбросить только варны (0/2)</span>
+                </label>
+            </div>
+            <button class="btn-primary" style="background: var(--success-color); color: #fff; margin-top: 8px;" onclick="submitSheetAction('unmute')">
+                🔓 Снять выбранные ограничения
+            </button>
+        </div>
+
+        <div id="sheet-status-msg" style="text-align: center; font-size: 12px; min-height: 18px;"></div>
+    </div>
+
+    <script>
+        const tg = window.Telegram?.WebApp;
+        if (tg) {
+            tg.ready();
+            tg.expand();
+        }
+
+        // ─── ЗВУКОВОЙ СИНТЕЗАТОР WEB AUDIO API ───
+        let soundEnabled = localStorage.getItem('botik_sound') !== 'false';
+
+        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+        let audioCtx = null;
+
+        function getAudioContext() {
+            if (!audioCtx && AudioContextClass) {
+                audioCtx = new AudioContextClass();
+            }
+            if (audioCtx && audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+            return audioCtx;
+        }
+
+        function playSound(type) {
+            if (!soundEnabled) return;
+            try {
+                const ctx = getAudioContext();
+                if (!ctx) return;
+
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+
+                const now = ctx.currentTime;
+
+                if (type === 'click') {
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(600, now);
+                    osc.frequency.exponentialRampToValueAtTime(800, now + 0.04);
+                    gain.gain.setValueAtTime(0.12, now);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.04);
+                    osc.start(now);
+                    osc.stop(now + 0.04);
+                } else if (type === 'sheet') {
+                    osc.type = 'triangle';
+                    osc.frequency.setValueAtTime(320, now);
+                    osc.frequency.exponentialRampToValueAtTime(540, now + 0.08);
+                    gain.gain.setValueAtTime(0.15, now);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
+                    osc.start(now);
+                    osc.stop(now + 0.08);
+                } else if (type === 'success') {
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(523.25, now); // C5
+                    osc.frequency.setValueAtTime(659.25, now + 0.08); // E5
+                    gain.gain.setValueAtTime(0.15, now);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
+                    osc.start(now);
+                    osc.stop(now + 0.2);
+                } else if (type === 'drop') {
+                    osc.type = 'square';
+                    osc.frequency.setValueAtTime(240, now);
+                    osc.frequency.exponentialRampToValueAtTime(100, now + 0.05);
+                    gain.gain.setValueAtTime(0.08, now);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
+                    osc.start(now);
+                    osc.stop(now + 0.05);
+                }
+            } catch (e) {
+                // Игнорируем ограничения автовоспроизведения браузера
+            }
+        }
+
+        function setSound(enabled) {
+            soundEnabled = enabled;
+            localStorage.setItem('botik_sound', enabled);
+            document.getElementById('btn-sound-on').classList.toggle('active', enabled);
+            document.getElementById('btn-sound-off').classList.toggle('active', !enabled);
+            if (enabled) playSound('success');
+            if (tg?.HapticFeedback) tg.HapticFeedback.selectionChanged();
+        }
+
+        // Параметры пользователя
+        const urlParams = new URLSearchParams(window.location.search);
+        const queryUid = urlParams.get('uid');
+        const queryCid = urlParams.get('cid');
+
+        const KNOWN_ADMINS = [5851158445, 6883189908, 5309937158];
+
+        const tgUser = tg?.initDataUnsafe?.user;
+        const fallbackId = (queryUid && parseInt(queryUid)) || tgUser?.id || 5851158445;
+        const isArtem = fallbackId === 5851158445;
+
+        const currentUser = {
+            id: fallbackId,
+            firstName: tgUser?.first_name || (isArtem ? "ArTeM" : (queryUid ? `Участник ${queryUid}` : "Участник")),
+            username: tgUser?.username || (isArtem ? "ArTeM_aoao" : ""),
+            chatId: queryCid ? parseInt(queryCid) : -1003955632241,
+            photoUrl: tgUser?.photo_url || "",
+            isAdmin: KNOWN_ADMINS.includes(fallbackId)
+        };
+
+        // Установка аватара и инфо профиля
+        document.getElementById('user-name').querySelector('span').textContent = currentUser.firstName;
+        document.getElementById('user-handle').textContent = currentUser.username ? `@${currentUser.username}` : "Личный профиль";
+        document.getElementById('user-id-badge').textContent = `ID: ${currentUser.id} • 🟢 В сети`;
+
+        if (currentUser.id == 5851158445) {
+            document.getElementById('user-role-badge').textContent = "👑 Создатель";
+            document.getElementById('user-role-badge').className = "role-badge role-creator";
+        } else if (KNOWN_ADMINS.includes(currentUser.id)) {
+            document.getElementById('user-role-badge').textContent = "🛡️ Админ";
+            document.getElementById('user-role-badge').className = "role-badge role-admin";
+        } else {
+            document.getElementById('user-role-badge').textContent = "👤 Участник";
+            document.getElementById('user-role-badge').className = "role-badge role-user";
+        }
+
+        // Загрузка реального аватара
+        const avatarImg = document.getElementById('user-avatar-img');
+        const avatarFallback = document.getElementById('user-avatar-placeholder');
+        avatarFallback.textContent = (currentUser.firstName[0] || "👤").toUpperCase();
+
+        const avatarSrc = currentUser.photoUrl || `${window.location.origin}/api/avatar/${currentUser.id}`;
+        avatarImg.src = avatarSrc;
+
+        const API_BASE = window.location.origin;
+
+        // ─── НАВИГАЦИЯ С АНИМАЦИЕЙ И ЗВУКОМ ───
+        function switchTab(tabId) {
+            playSound('click');
+            document.querySelectorAll('.tab-item').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+
+            const ids = ['tab-status', 'tab-chat', 'tab-feedback', 'tab-tetris', 'tab-admin', 'tab-settings'];
+            const idx = ids.indexOf(tabId);
+            if (idx >= 0) {
+                document.querySelectorAll('.tab-item')[idx].classList.add('active');
+            }
+            document.getElementById(tabId).classList.add('active');
+
+            if (tg?.HapticFeedback) tg.HapticFeedback.selectionChanged();
+
+            if (tabId === 'tab-status') loadUserStatus();
+            if (tabId === 'tab-admin') loadAdminStats();
+        }
+
+        // ─── ОТПРАВКА ПРОБЛЕМЫ / ИДЕИ ───
+        async function submitFeedback() {
+            playSound('click');
+            const input = document.getElementById('feedback-input');
+            const statusEl = document.getElementById('feedback-status');
+            const sendBtn = document.getElementById('btn-send-feedback');
+            const text = (input.value || '').trim();
+
+            if (text.length < 5) {
+                statusEl.style.display = 'block';
+                statusEl.style.background = 'rgba(246, 70, 93, 0.15)';
+                statusEl.style.color = 'var(--danger-color)';
+                statusEl.textContent = '❌ Пожалуйста, напишите подробнее (минимум 5 символов).';
+                return;
+            }
+
+            sendBtn.disabled = true;
+            sendBtn.textContent = '🤖 Анализ нейросетью...';
+            statusEl.style.display = 'block';
+            statusEl.style.background = 'rgba(240, 185, 11, 0.15)';
+            statusEl.style.color = 'var(--accent-color)';
+            statusEl.textContent = '⏳ Gemini анализирует текст и отправляет репорт в топик «Идеи»...';
+
+            try {
+                const res = await fetch(`${API_BASE}/api/report_issue`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        text: text,
+                        user_id: currentUser.id,
+                        chat_id: currentUser.chatId,
+                        user_name: currentUser.firstName,
+                        username: currentUser.username
+                    })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    playSound('success');
+                    if (tg?.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
+                    statusEl.style.background = 'rgba(14, 203, 129, 0.15)';
+                    statusEl.style.color = 'var(--success-color)';
+                    statusEl.innerHTML = `✅ <b>Отправлено!</b><br>${data.message}`;
+                    input.value = '';
+                } else {
+                    playSound('click');
+                    statusEl.style.background = 'rgba(246, 70, 93, 0.15)';
+                    statusEl.style.color = 'var(--danger-color)';
+                    statusEl.textContent = `❌ ${data.message || 'Ошибка отправки'}`;
+                }
+            } catch (err) {
+                statusEl.style.background = 'rgba(246, 70, 93, 0.15)';
+                statusEl.style.color = 'var(--danger-color)';
+                statusEl.textContent = '❌ Ошибка соединения с сервером.';
+            } finally {
+                sendBtn.disabled = false;
+                sendBtn.textContent = '🚀 Отправить в «Идеи»';
+            }
+        }
+
+        // ─── СТИЛИ И ТЕМЫ ───
+        function setTheme(mode) {
+            playSound('click');
+            document.body.classList.remove('theme-light', 'theme-dark');
+            if (mode === 'light') document.body.classList.add('theme-light');
+            document.getElementById('btn-theme-dark').classList.toggle('active', mode !== 'light');
+            document.getElementById('btn-theme-light').classList.toggle('active', mode === 'light');
+            localStorage.setItem('botik_theme', mode);
+        }
+
+        function setStyle(style) {
+            playSound('click');
+            document.body.classList.remove('style-binance', 'style-telegram');
+            if (style === 'telegram') document.body.classList.add('style-telegram');
+            else document.body.classList.add('style-binance');
+
+            document.getElementById('btn-style-binance').classList.toggle('active', style !== 'telegram');
+            document.getElementById('btn-style-telegram').classList.toggle('active', style === 'telegram');
+            localStorage.setItem('botik_style', style);
+        }
+
+        // Восстановление настроек
+        const savedTheme = localStorage.getItem('botik_theme') || 'dark';
+        const savedStyle = localStorage.getItem('botik_style') || 'binance';
+        setTheme(savedTheme);
+        setStyle(savedStyle);
+        setSound(soundEnabled);
+
+        // ─── 1. ПРОФИЛЬ ───
+        async function loadUserStatus() {
+            try {
+                const res = await fetch(`${API_BASE}/api/user_status?user_id=${currentUser.id}&chat_id=${currentUser.chatId || ''}`);
+                if (!res.ok) throw new Error("API error");
+                const data = await res.json();
+
+                if (typeof data.is_admin === 'boolean') currentUser.isAdmin = data.is_admin;
+                if (KNOWN_ADMINS.includes(currentUser.id)) currentUser.isAdmin = true;
+
+                const roleBadge = document.getElementById('user-role-badge');
+                if (currentUser.id == 5851158445) {
+                    roleBadge.textContent = "👑 Создатель";
+                    roleBadge.className = "role-badge role-creator";
+                } else if (currentUser.isAdmin) {
+                    roleBadge.textContent = "🛡️ Админ";
+                    roleBadge.className = "role-badge role-admin";
+                } else {
+                    roleBadge.textContent = "👤 Участник";
+                    roleBadge.className = "role-badge role-user";
+                }
+
+                updateAdminTabVisibility();
+                renderUserStatus(data);
+            } catch (e) {
+                if (KNOWN_ADMINS.includes(currentUser.id)) currentUser.isAdmin = true;
+                updateAdminTabVisibility();
+                renderUserStatus({ warnings: 0, max_warnings: 2, violations_history: [] });
+            }
+        }
+
+        function updateAdminTabVisibility() {
+            const forbiddenCard = document.getElementById('admin-forbidden-card');
+            const adminBox = document.getElementById('admin-content-box');
+            if (currentUser.isAdmin) {
+                forbiddenCard.style.display = 'none';
+                adminBox.style.display = 'flex';
+            } else {
+                forbiddenCard.style.display = 'block';
+                adminBox.style.display = 'none';
+            }
+        }
+
+        function renderUserStatus(data) {
+            const warns = data.warnings || 0;
+            document.getElementById('warn-count').textContent = `${warns} / 2`;
+            const boxEl = document.getElementById('warn-box');
+            const titleEl = document.getElementById('warn-title');
+            const descEl = document.getElementById('warn-desc');
+            const historyEl = document.getElementById('history-list');
+
+            boxEl.className = 'warn-indicator';
+            if (warns === 0) {
+                boxEl.classList.add('good');
+                titleEl.textContent = "Нарушений нет ✅";
+                descEl.textContent = "Вы соблюдаете правила чата. Всё в порядке!";
+            } else if (warns === 1) {
+                boxEl.classList.add('warning');
+                titleEl.textContent = "Внимание: 1 Предупреждение ⚠️";
+                descEl.textContent = "У вас 1 активное предупреждение. Повторное нарушение приведет к муту!";
+            } else {
+                boxEl.classList.add('danger');
+                titleEl.textContent = "Мут активен 🔇";
+                descEl.textContent = "Лимит предупреждений исчерпан. Чат временно заблокирован.";
+            }
+
+            if (data.violations_history && data.violations_history.length > 0) {
+                historyEl.innerHTML = data.violations_history.map(v => `
+                    <div class="history-item">
+                        <div class="history-meta">
+                            <span class="history-reason">${v.reason}</span>
+                            <span>${new Date(v.created_at).toLocaleDateString('ru-RU')}</span>
+                        </div>
+                        <div class="history-text">«${v.message_text || 'Удалённое сообщение'}»</div>
+                    </div>
+                `).join('');
+            } else {
+                historyEl.innerHTML = `<div style="color:var(--hint-color); font-size:12px; text-align:center; padding:8px;">Нарушений не зафиксировано 🎉</div>`;
+            }
+        }
+
+        // ─── 2. ЧАТ С БОТИКОМ ───
+        const chatHistory = [];
+        function askQuick(text) {
+            playSound('click');
+            document.getElementById('chat-input').value = text;
+            sendChatMessage();
+        }
+
+        async function sendChatMessage() {
+            const input = document.getElementById('chat-input');
+            const text = input.value.trim();
+            if (!text) return;
+
+            playSound('click');
+            input.value = '';
+            appendChatBubble(text, 'user');
+            chatHistory.push({ role: 'user', text: text });
+
+            const typingEl = document.getElementById('chat-typing');
+            typingEl.style.display = 'block';
+
+            if (tg?.HapticFeedback) tg.HapticFeedback.impactOccurred('light');
+
+            try {
+                const res = await fetch(`${API_BASE}/api/chat`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: text, history: chatHistory })
+                });
+                const data = await res.json();
+                typingEl.style.display = 'none';
+                appendChatBubble(data.reply || "Я на связи!", 'bot');
+                chatHistory.push({ role: 'bot', text: data.reply });
+                playSound('success');
+            } catch (err) {
+                typingEl.style.display = 'none';
+                appendChatBubble("Извини, сервер Ботика временно недоступен.", 'bot');
+            }
+        }
+
+        function appendChatBubble(text, sender) {
+            const container = document.getElementById('chat-messages');
+            const bubble = document.createElement('div');
+            bubble.className = `chat-bubble ${sender}`;
+            bubble.innerHTML = text.replace(/\n/g, '<br>');
+            container.appendChild(bubble);
+            container.scrollTop = container.scrollHeight;
+        }
+
+        // ─── 3. АДМИНКА (СПИСОК ВСЕХ УЧАСТНИКОВ + ОНЛАЙН) ───
+        let activeSheetUser = null;
+        let selectedMuteDuration = 3600;
+
+        async function loadAdminStats() {
+            updateAdminTabVisibility();
+            if (!currentUser.isAdmin) return;
+
+            try {
+                const res = await fetch(`${API_BASE}/api/admin_stats?user_id=${currentUser.id}&chat_id=${currentUser.chatId || ''}`);
+                if (!res.ok) throw new Error("Stats error");
+                const data = await res.json();
+
+                document.getElementById('stat-checked').textContent = data.stats?.checked_messages || 0;
+                document.getElementById('stat-violations').textContent = data.stats?.total_violations || 0;
+
+                const totalGroupMembers = data.total_group_members || 17;
+                document.getElementById('total-members-badge').textContent = totalGroupMembers;
+                document.getElementById('members-count-badge').textContent = data.members?.length || 0;
+
+                const membersList = document.getElementById('members-list');
+                if (data.members && data.members.length > 0) {
+                    membersList.innerHTML = data.members.map(m => {
+                        const name = m.full_name || (m.username ? `@${m.username}` : `User ${m.user_id}`);
+                        const handle = m.username ? `@${m.username}` : `ID: ${m.user_id}`;
+                        const badge = m.is_admin ? `<span class="badge-role badge-admin">Админ</span>` : `<span class="badge-role badge-user">Участник</span>`;
+                        const warnColor = m.warnings > 0 ? 'var(--danger-color)' : 'var(--success-color)';
+
+                        // Индикатор онлайн / оффлайн
+                        const dotClass = m.is_online ? 'mini-online-dot' : 'mini-offline-dot';
+                        const statusText = m.is_online ? '<span style="color:var(--success-color); font-weight:bold;">В сети</span>' : m.last_seen_str;
+
+                        const avatarSrc = `${API_BASE}/api/avatar/${m.user_id}`;
+
+                        return `
+                            <div class="member-item" onclick="openMemberSheet(${JSON.stringify(m).replace(/"/g, '&quot;')})">
+                                <div class="member-avatar-mini">
+                                    <img src="${avatarSrc}" class="member-avatar-img" onerror="this.src='https://telegram.org/img/t_logo.png'">
+                                    <div class="${dotClass}"></div>
+                                </div>
+                                <div class="member-info">
+                                    <div class="member-name">${name} ${badge}</div>
+                                    <div class="member-sub">
+                                        <span>${handle}</span>
+                                        <span>•</span>
+                                        <span>${statusText}</span>
+                                        <span>•</span>
+                                        <b style="color:${warnColor}">${m.warnings}/2 варнов</b>
+                                    </div>
+                                </div>
+                                <div style="font-size: 16px; color: var(--hint-color); padding-left: 6px;">⚙️</div>
+                            </div>
+                        `;
+                    }).join('');
+                } else {
+                    membersList.innerHTML = `<div style="color:var(--hint-color); text-align:center; padding:10px; font-size:12px;">Участники появятся после команды /scan или сообщений в чате</div>`;
+                }
+            } catch (e) {
+                console.log("Stats error", e);
+            }
+        }
+
+        async function addMemberById() {
+            const input = document.getElementById('add-member-input');
+            const statusEl = document.getElementById('add-member-status');
+            const query = input.value.trim();
+            if (!query) return;
+
+            playSound('click');
+            statusEl.style.display = 'block';
+            statusEl.textContent = 'Поиск в Telegram...';
+            statusEl.style.color = 'var(--accent-color)';
+
+            try {
+                const res = await fetch(`${API_BASE}/api/add_member`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ query: query, chat_id: currentUser.chatId })
+                });
+                const data = await res.json();
+                statusEl.textContent = data.message;
+                statusEl.style.color = data.success ? 'var(--success-color)' : 'var(--danger-color)';
+                playSound(data.success ? 'success' : 'click');
+                if (data.success) {
+                    input.value = '';
+                    loadAdminStats();
+                }
+            } catch (e) {
+                statusEl.textContent = 'Ошибка запроса';
+                statusEl.style.color = 'var(--danger-color)';
+            }
+        }
+
+        function openMemberSheet(user) {
+            playSound('sheet');
+            activeSheetUser = user;
+            document.getElementById('sheet-user-name').textContent = user.full_name || user.username || `User ${user.user_id}`;
+            document.getElementById('sheet-user-id').textContent = `User ID: ${user.user_id} • ${user.username ? '@' + user.username : 'без юзернейма'} • ${user.is_online ? '🟢 В сети' : '⚪ ' + (user.last_seen_str || 'Оффлайн')}`;
+            document.getElementById('sheet-warn-badge').textContent = `Предупреждений: ${user.warnings || 0}/2`;
+
+            document.getElementById('sheet-status-msg').textContent = '';
+            document.getElementById('sheet-overlay').classList.add('active');
+            document.getElementById('bottom-sheet').classList.add('active');
+
+            if (tg?.HapticFeedback) tg.HapticFeedback.impactOccurred('medium');
+        }
+
+        function closeSheet() {
+            playSound('click');
+            document.getElementById('sheet-overlay').classList.remove('active');
+            document.getElementById('bottom-sheet').classList.remove('active');
+            activeSheetUser = null;
+        }
+
+        function selectMuteTime(seconds, label, btn) {
+            playSound('click');
+            selectedMuteDuration = seconds;
+            document.getElementById('selected-time-label').textContent = label;
+            document.querySelectorAll('.time-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            if (tg?.HapticFeedback) tg.HapticFeedback.selectionChanged();
+        }
+
+        async function submitSheetAction(action) {
+            if (!activeSheetUser) return;
+            playSound('click');
+            const msgEl = document.getElementById('sheet-status-msg');
+            msgEl.textContent = "Отправка команды...";
+            msgEl.style.color = "var(--accent-color)";
+
+            const unmuteChoice = document.querySelector('input[name="unmute-choice"]:checked')?.value || 'all';
+
+            try {
+                const res = await fetch(`${API_BASE}/api/admin/action`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        admin_id: currentUser.id,
+                        action: action,
+                        user_id: activeSheetUser.user_id,
+                        chat_id: currentUser.chatId,
+                        duration_seconds: selectedMuteDuration,
+                        unmute_type: unmuteChoice
+                    })
+                });
+                const resp = await res.json();
+                msgEl.textContent = resp.message || "Успешно!";
+                msgEl.style.color = resp.success ? "var(--success-color)" : "var(--danger-color)";
+
+                playSound(resp.success ? 'success' : 'click');
+                if (tg?.HapticFeedback) tg.HapticFeedback.notificationOccurred(resp.success ? 'success' : 'error');
+
+                loadAdminStats();
+                setTimeout(() => { closeSheet(); }, 1600);
+            } catch (err) {
+                msgEl.textContent = "Ошибка связи с сервером";
+                msgEl.style.color = "var(--danger-color)";
+            }
+        }
+
+        // ─── 4. ТЕТРИС ───
+        const canvas = document.getElementById('tetris');
+        const context = canvas.getContext('2d');
+        const scoreEl = document.getElementById('t-score');
+        const highEl = document.getElementById('t-high');
+
+        context.scale(20, 20);
+
+        function arenaSweep() {
+            let rowCount = 1;
+            for (let y = arena.length - 1; y > 0; --y) {
+                let isFull = true;
+                for (let x = 0; x < arena[y].length; ++x) {
+                    if (arena[y][x] === 0) { isFull = false; break; }
+                }
+                if (isFull) {
+                    const row = arena.splice(y, 1)[0].fill(0);
+                    arena.unshift(row);
+                    ++y;
+                    player.score += rowCount * 10;
+                    rowCount *= 2;
+                    playSound('success');
+                    if (tg?.HapticFeedback) tg.HapticFeedback.impactOccurred('medium');
+                }
+            }
+        }
+
+        function collide(arena, player) {
+            const m = player.matrix;
+            const o = player.pos;
+            for (let y = 0; y < m.length; ++y) {
+                for (let x = 0; x < m[y].length; ++x) {
+                    if (m[y][x] !== 0) {
+                        const newY = y + o.y;
+                        const newX = x + o.x;
+                        if (newY >= arena.length || newX < 0 || newX >= arena[0].length ||
+                            (arena[newY] && arena[newY][newX] !== 0)) {
+                            return true;
+                        }
+                    }
+                }
+            }
+            return false;
+        }
+
+        function createMatrix(w, h) {
+            const matrix = [];
+            while (h--) matrix.push(new Array(w).fill(0));
+            return matrix;
+        }
+
+        function createPiece(type) {
+            if (type === 'T') return [[0,0,0],[1,1,1],[0,1,0]];
+            if (type === 'O') return [[2,2],[2,2]];
+            if (type === 'L') return [[0,3,0],[0,3,0],[0,3,3]];
+            if (type === 'J') return [[0,4,0],[0,4,0],[4,4,0]];
+            if (type === 'I') return [[0,5,0,0],[0,5,0,0],[0,5,0,0],[0,5,0,0]];
+            if (type === 'S') return [[0,6,6],[6,6,0],[0,0,0]];
+            if (type === 'Z') return [[7,7,0],[0,7,7],[0,0,0]];
+        }
+
+        const colors = [null, '#F0B90B', '#0ECB81', '#F6465D', '#3B82F6', '#8B5CF6', '#FCD535', '#06B6D4'];
+
+        function drawMatrix(matrix, offset) {
+            matrix.forEach((row, y) => {
+                row.forEach((value, x) => {
+                    if (value !== 0) {
+                        context.fillStyle = colors[value];
+                        context.fillRect(x + offset.x, y + offset.y, 1, 1);
+                        context.strokeStyle = '#07090E';
+                        context.lineWidth = 0.05;
+                        context.strokeRect(x + offset.x, y + offset.y, 1, 1);
+                    }
+                });
+            });
+        }
+
+        function draw() {
+            context.fillStyle = '#07090E';
+            context.fillRect(0, 0, 10, 20);
+            drawMatrix(arena, {x: 0, y: 0});
+            if (player.matrix) drawMatrix(player.matrix, player.pos);
+        }
+
+        function merge(arena, player) {
+            player.matrix.forEach((row, y) => {
+                row.forEach((value, x) => {
+                    if (value !== 0) arena[y + player.pos.y][x + player.pos.x] = value;
+                });
+            });
+        }
+
+        function playerDrop() {
+            player.pos.y++;
+            if (collide(arena, player)) {
+                player.pos.y--;
+                merge(arena, player);
+                playSound('drop');
+                playerReset();
+                arenaSweep();
+                scoreEl.textContent = player.score;
+                if (player.score > highScore) {
+                    highScore = player.score;
+                    highEl.textContent = highScore;
+                }
+            }
+            dropCounter = 0;
+        }
+
+        function playerHardDrop() {
+            while (!collide(arena, player)) {
+                player.pos.y++;
+            }
+            player.pos.y--;
+            merge(arena, player);
+            playSound('drop');
+            playerReset();
+            arenaSweep();
+            scoreEl.textContent = player.score;
+            if (tg?.HapticFeedback) tg.HapticFeedback.impactOccurred('heavy');
+            dropCounter = 0;
+        }
+
+        function playerMove(dir) {
+            player.pos.x += dir;
+            if (collide(arena, player)) player.pos.x -= dir;
+            playSound('click');
+            if (tg?.HapticFeedback) tg.HapticFeedback.impactOccurred('light');
+        }
+
+        function playerReset() {
+            const pieces = 'ILJOTSZ';
+            player.matrix = createPiece(pieces[pieces.length * Math.random() | 0]);
+            player.pos.y = 0;
+            player.pos.x = (arena[0].length / 2 | 0) - (player.matrix[0].length / 2 | 0);
+
+            if (collide(arena, player)) {
+                arena.forEach(row => row.fill(0));
+                player.score = 0;
+                scoreEl.textContent = 0;
+                gameOver = true;
+                if (tg?.HapticFeedback) tg.HapticFeedback.notificationOccurred('error');
+            }
+        }
+
+        function playerRotate(dir) {
+            const pos = player.pos.x;
+            let offset = 1;
+            rotate(player.matrix, dir);
+            while (collide(arena, player)) {
+                player.pos.x += offset;
+                offset = -(offset + (offset > 0 ? 1 : -1));
+                if (offset > player.matrix[0].length) {
+                    rotate(player.matrix, -dir);
+                    player.pos.x = pos;
+                    return;
+                }
+            }
+            playSound('click');
+            if (tg?.HapticFeedback) tg.HapticFeedback.impactOccurred('light');
+        }
+
+        function rotate(matrix, dir) {
+            for (let y = 0; y < matrix.length; ++y) {
+                for (let x = 0; x < y; ++x) [matrix[x][y], matrix[y][x]] = [matrix[y][x], matrix[x][y]];
+            }
+            if (dir > 0) matrix.forEach(row => row.reverse());
+            else matrix.reverse();
+        }
+
+        let dropCounter = 0;
+        let dropInterval = 750;
+        let lastTime = 0;
+        let gameOver = true;
+        let isPaused = false;
+        let highScore = 0;
+        let animId;
+
+        function update(time = 0) {
+            if (gameOver || isPaused) return;
+            const delta = time - lastTime;
+            lastTime = time;
+            dropCounter += delta;
+            if (dropCounter > dropInterval) playerDrop();
+            draw();
+            animId = requestAnimationFrame(update);
+        }
+
+        const arena = createMatrix(10, 20);
+        const player = { pos: {x: 0, y: 0}, matrix: null, score: 0 };
+
+        document.getElementById('btn-left').addEventListener('click', (e) => { e.preventDefault(); if (!gameOver) playerMove(-1); });
+        document.getElementById('btn-right').addEventListener('click', (e) => { e.preventDefault(); if (!gameOver) playerMove(1); });
+        document.getElementById('btn-down').addEventListener('click', (e) => { e.preventDefault(); if (!gameOver) playerDrop(); });
+        document.getElementById('btn-rotate').addEventListener('click', (e) => { e.preventDefault(); if (!gameOver) playerRotate(1); });
+
+        window.addEventListener('keydown', (e) => {
+            const activeTab = document.getElementById('tab-tetris').classList.contains('active');
+            if (!activeTab || gameOver) return;
+
+            if (e.code === 'ArrowLeft' || e.code === 'KeyA') {
+                e.preventDefault();
+                playerMove(-1);
+            } else if (e.code === 'ArrowRight' || e.code === 'KeyD') {
+                e.preventDefault();
+                playerMove(1);
+            } else if (e.code === 'ArrowUp' || e.code === 'KeyW') {
+                e.preventDefault();
+                playerRotate(1);
+            } else if (e.code === 'ArrowDown' || e.code === 'KeyS') {
+                e.preventDefault();
+                playerDrop();
+            } else if (e.code === 'Space') {
+                e.preventDefault();
+                playerHardDrop();
+            } else if (e.code === 'KeyP') {
+                e.preventDefault();
+                isPaused = !isPaused;
+                if (!isPaused) {
+                    lastTime = performance.now();
+                    update();
+                }
+            }
+        });
+
+        document.getElementById('t-start').addEventListener('click', () => {
+            playSound('success');
+            arena.forEach(row => row.fill(0));
+            player.score = 0;
+            scoreEl.textContent = 0;
+            playerReset();
+            gameOver = false;
+            isPaused = false;
+            lastTime = performance.now();
+            if (animId) cancelAnimationFrame(animId);
+            update();
+            document.getElementById('t-start').textContent = "Заново";
+        });
+
+        loadUserStatus();
+    </script>
+</body>
+</html>

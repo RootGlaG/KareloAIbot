@@ -40,7 +40,11 @@ async def options_handler(request: web.Request) -> web.Response:
 
 
 async def serve_index(request: web.Request) -> web.Response:
-    html_path = os.path.join(os.path.dirname(__file__), "..", "webapp", "index.html")
+    # Ищем index.html в корне репозитория или в подпапке webapp
+    html_path = os.path.join(os.path.dirname(__file__), "..", "index.html")
+    if not os.path.exists(html_path):
+        html_path = os.path.join(os.path.dirname(__file__), "..", "webapp", "index.html")
+
     if not os.path.exists(html_path):
         return web.Response(text="OK", status=200)
     with open(html_path, "r", encoding="utf-8") as f:
