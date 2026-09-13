@@ -105,12 +105,12 @@
             filter: brightness(0.92);
         }
 
-        /* ─── ВЕРХНЯЯ НАВИГАЦИЯ (ДВА РЯДА, УДОБНЫЙ РАЗМЕР) ─── */
+        /* ─── ВЕРХНЯЯ НАВИГАЦИЯ (ДВА РЯДА, УДОБНЫЙ КРУПНЫЙ РАЗМЕР) ─── */
         .tab-bar {
             display: grid;
             grid-template-columns: repeat(3, 1fr);
-            gap: 6px;
-            padding: 8px;
+            gap: 8px;
+            padding: 10px 10px 8px;
             background-color: var(--sec-bg-color);
             border-bottom: 1px solid var(--border-color);
             flex-shrink: 0;
@@ -120,33 +120,63 @@
 
         .tab-item {
             padding: 10px 4px;
+            min-height: 44px;
             text-align: center;
             font-size: 13px;
             font-weight: 700;
             color: var(--hint-color);
             cursor: pointer;
-            border-radius: var(--radius-sm);
+            border-radius: 10px;
             background: var(--card-bg);
-            border: 1px solid var(--border-color);
+            border: 1.5px solid var(--border-color);
             display: flex;
             align-items: center;
             justify-content: center;
-            gap: 5px;
+            gap: 4px;
             white-space: nowrap;
             user-select: none;
+            box-sizing: border-box;
+            letter-spacing: -0.2px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+        }
+
+        .tab-item:active {
+            transform: scale(0.96);
+            filter: brightness(0.92);
         }
 
         .tab-item.active {
             color: var(--accent-color);
             border-color: var(--accent-color);
-            background: rgba(240, 185, 11, 0.12);
-            box-shadow: 0 2px 8px rgba(240, 185, 11, 0.15);
+            background: rgba(240, 185, 11, 0.15);
+            box-shadow: 0 2px 10px rgba(240, 185, 11, 0.22);
+            font-weight: 800;
         }
         body.style-telegram .tab-item.active {
             color: var(--accent-color);
             border-color: var(--accent-color);
-            background: rgba(59, 130, 246, 0.15);
-            box-shadow: 0 2px 8px rgba(59, 130, 246, 0.18);
+            background: rgba(36, 129, 204, 0.15);
+            box-shadow: 0 2px 10px rgba(36, 129, 204, 0.22);
+            font-weight: 800;
+        }
+
+        @media (max-width: 375px) {
+            .tab-bar {
+                gap: 6px;
+                padding: 8px 6px;
+            }
+            .tab-item {
+                font-size: 12px;
+                min-height: 42px;
+                padding: 8px 2px;
+                gap: 3px;
+            }
+        }
+        @media (max-width: 320px) {
+            .tab-item {
+                font-size: 11px;
+                min-height: 38px;
+            }
         }
 
         /* ─── ОСНОВНОЙ КОНТЕЙНЕР ─── */
@@ -764,14 +794,14 @@
 </head>
 <body class="style-binance">
 
-    <!-- Верхняя навигация: кнопка «Профиль» вместо «Варны» -->
+    <!-- Верхняя навигация: 2 ряда по 3 кнопки, крупные и удобные -->
     <div class="tab-bar">
-        <div class="tab-item active" onclick="switchTab('tab-status')">👤 Профиль</div>
-        <div class="tab-item" onclick="switchTab('tab-chat')">💬 Чат</div>
-        <div class="tab-item" onclick="switchTab('tab-feedback')">💡 Идеи / Баги</div>
-        <div class="tab-item" onclick="switchTab('tab-tetris')">🎮 Тетрис</div>
-        <div class="tab-item" id="nav-admin" onclick="switchTab('tab-admin')">📊 Админка</div>
-        <div class="tab-item" onclick="switchTab('tab-settings')">⚙️ Опции</div>
+        <div class="tab-item active" data-tab="tab-status" onclick="switchTab('tab-status')">👤 Профиль</div>
+        <div class="tab-item" data-tab="tab-chat" onclick="switchTab('tab-chat')">💬 Чат</div>
+        <div class="tab-item" data-tab="tab-feedback" onclick="switchTab('tab-feedback')">💡 Идеи</div>
+        <div class="tab-item" data-tab="tab-tetris" onclick="switchTab('tab-tetris')">🎮 Тетрис</div>
+        <div class="tab-item" id="nav-admin" data-tab="tab-admin" onclick="switchTab('tab-admin')">📊 Админка</div>
+        <div class="tab-item" data-tab="tab-settings" onclick="switchTab('tab-settings')">⚙️ Настройки</div>
     </div>
 
     <!-- Основной контейнер -->
@@ -1193,23 +1223,27 @@
         const avatarFallback = document.getElementById('user-avatar-placeholder');
         avatarFallback.textContent = (currentUser.firstName[0] || "👤").toUpperCase();
 
-        const avatarSrc = currentUser.photoUrl || `${window.location.origin}/api/avatar/${currentUser.id}`;
-        avatarImg.src = avatarSrc;
+        const API_BASE = (window.location.origin && window.location.origin !== 'null' && !window.location.origin.includes('github.io'))
+            ? window.location.origin
+            : 'https://kareloaibot.onrender.com';
 
-        const API_BASE = window.location.origin;
+        const avatarSrc = currentUser.photoUrl || `${API_BASE}/api/avatar/${currentUser.id}`;
+        avatarImg.src = avatarSrc;
 
         // ─── НАВИГАЦИЯ С АНИМАЦИЕЙ И ЗВУКОМ ───
         function switchTab(tabId) {
             playSound('click');
-            document.querySelectorAll('.tab-item').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-item').forEach(t => {
+                if (t.getAttribute('data-tab') === tabId) {
+                    t.classList.add('active');
+                } else {
+                    t.classList.remove('active');
+                }
+            });
             document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
 
-            const ids = ['tab-status', 'tab-chat', 'tab-feedback', 'tab-tetris', 'tab-admin', 'tab-settings'];
-            const idx = ids.indexOf(tabId);
-            if (idx >= 0) {
-                document.querySelectorAll('.tab-item')[idx].classList.add('active');
-            }
-            document.getElementById(tabId).classList.add('active');
+            const targetContent = document.getElementById(tabId);
+            if (targetContent) targetContent.classList.add('active');
 
             if (tg?.HapticFeedback) tg.HapticFeedback.selectionChanged();
 
