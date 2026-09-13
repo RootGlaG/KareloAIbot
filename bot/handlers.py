@@ -19,7 +19,13 @@ from aiogram.filters import (
     Command
 )
 
-from bot.ai_moderator import check_message, REASON_MAP, chat_with_bot
+from bot.ai_moderator import (
+    check_message,
+    REASON_MAP,
+    chat_with_bot,
+    test_gemini_connection,
+    set_new_gemini_key
+)
 from bot.database import (
     get_warnings,
     add_warning,
@@ -385,6 +391,92 @@ async def cmd_set_ideas(message: Message, bot: Bot) -> None:
         f"<b>«💡 Проблемы бота»</b> будут автоматически структурироваться ИИ и пересылаться сюда."
     )
 
+
+
+# ──────────────────────────────────────────────
+# /check_ai — проверка статуса нейросети
+# ──────────────────────────────────────────────
+@router.message(Command("check_ai"))
+async def cmd_check_ai(message: Message, bot: Bot) -> None:
+    is_adm = False
+    if message.chat.type in ("group", "supergroup"):
+        is_adm = await is_chat_admin(bot, message.chat.id, message.from_user.id)
+    else:
+        is_adm = message.from_user.id in ADMIN_IDS or message.from_user.id == 5851158445
+
+    if not is_adm:
+        await message.answer("❌ Эта команда доступна только администраторам супергруппы.")
+        return
+
+    status_msg = await message.answer("⏳ Тестирую подключение к Google Gemini API...")
+    ok, details = await test_gemini_connection()
+
+    if ok:
+        await status_msg.edit_text(
+            f"🤖 <b>Статус нейросети Gemini:</b> 🟢 АКТИВНА\n\n"
+            f"{details}\n\n"
+            f"ИИ-модерация сообщений и диалоги с Ботиком работают на полную мощность!"
+        )
+    else:
+        await status_msg.edit_text(
+            f"🤖 <b>Статус нейросети Gemini:</b> 🔴 ТРЕБУЕТ НАСТРОЙКИ\n\n"
+            f"{details}\n\n"
+            f"💡 <b>Как настроить ключ за 30 секунд:</b>\n"
+            f"1. Откройте <a href=\"https://aistudio.google.com/app/apikey\">Google AI Studio</a>\n"
+            f"2. Создайте и скопируйте бесплатный ключ (начинается на <code>AIzaSy...</code>)\n"
+            f"3. Отправьте боту команду:\n"
+            f"<code>/set_gemini ВАШ_КЛЮЧ</code>",
+            disable_web_page_preview=True
+        )
+
+
+# ──────────────────────────────────────────────
+# /set_gemini — установка ключа Gemini на лету
+# ──────────────────────────────────────────────
+@router.message(Command("set_gemini"))
+async def cmd_set_gemini(message: Message, bot: Bot) -> None:
+    is_adm = False
+    if message.chat.type in ("group", "supergroup"):
+        is_adm = await is_chat_admin(bot, message.chat.id, message.from_user.id)
+    else:
+        is_adm = message.from_user.id in ADMIN_IDS or message.from_user.id == 5851158445
+
+    if not is_adm:
+        await message.answer("❌ Только администраторы могут изменять настройки нейросети.")
+        return
+
+    args = message.text.replace("/set_gemini", "", 1).strip()
+    if not args:
+        await message.answer(
+            "ℹ️ <b>Установка API ключа Gemini:</b>\n\n"
+            "Использование: <code>/set_gemini AIzaSy...</code>\n\n"
+            "Получить бесплатный ключ можно в <a href=\"https://aistudio.google.com/app/apikey\">Google AI Studio</a>.",
+            disable_web_page_preview=True
+        )
+        return
+
+    # Удаляем сообщение с ключом из чата ради безопасности, если это группа
+    if message.chat.type in ("group", "supergroup"):
+        try:
+            await message.delete()
+        except Exception:
+            pass
+
+    status_msg = await message.answer("⏳ Проверяю валидность ключа в Google AI Studio...")
+    ok, msg = await set_new_gemini_key(args)
+
+    if ok:
+        await status_msg.edit_text(
+            f"🎉 <b>Ключ успешно активирован!</b>\n\n"
+            f"{msg}\n\n"
+            f"Нейросеть Gemini подключена и готова к работе во всех разделах Ботика!"
+        )
+    else:
+        await status_msg.edit_text(
+            f"❌ <b>Не удалось активировать ключ:</b>\n\n"
+            f"{msg}\n\n"
+            f"Пожалуйста, убедитесь, что ключ скопирован целиком без лишних пробелов."
+        )
 
 
 # ──────────────────────────────────────────────

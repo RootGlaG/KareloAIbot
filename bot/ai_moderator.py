@@ -1,31 +1,89 @@
 import json
 import logging
 import re
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 from google import genai
 from google.genai import types
-from bot.config import GEMINI_API_KEY
+import bot.config as config
 
 logger = logging.getLogger(__name__)
 
 _client = None
+_key_is_invalid = False
 
-# Список моделей в порядке предпочтения
-MODELS_TO_TRY = ['gemini-3.6-flash', 'gemini-3.5-flash-lite', 'gemini-flash-latest']
+# Официальные актуальные модели Gemini API в порядке предпочтения
+MODELS_TO_TRY = [
+    'gemini-2.0-flash',
+    'gemini-1.5-flash',
+    'gemini-1.5-flash-8b',
+    'gemini-1.5-pro'
+]
 
 
 def _get_client() -> Optional[genai.Client]:
-    global _client
+    global _client, _key_is_invalid
+    if _key_is_invalid:
+        return None
     if _client is None:
-        if not GEMINI_API_KEY:
+        key = config.GEMINI_API_KEY.strip() if config.GEMINI_API_KEY else ""
+        if not key:
             logger.warning("GEMINI_API_KEY is not set — AI features disabled.")
             return None
         try:
-            _client = genai.Client(api_key=GEMINI_API_KEY)
+            _client = genai.Client(api_key=key)
         except Exception as e:
             logger.error("Failed to initialize Gemini Client: %s", e)
             return None
     return _client
+
+
+async def test_gemini_connection(custom_key: Optional[str] = None) -> Tuple[bool, str]:
+    """Проверяет подключение к Google Gemini API и возвращает (успех, сообщение)."""
+    global _key_is_invalid
+    key = (custom_key or config.GEMINI_API_KEY or "").strip()
+    if not key:
+        return False, "Ключ GEMINI_API_KEY не установлен."
+
+    try:
+        test_client = genai.Client(api_key=key)
+        last_err = ""
+        for model in MODELS_TO_TRY:
+            try:
+                resp = await test_client.aio.models.generate_content(
+                    model=model,
+                    contents="Ответь одним словом: Работает",
+                    config=types.GenerateContentConfig(temperature=0.1)
+                )
+                text = (resp.text or "").strip()
+                _key_is_invalid = False
+                return True, f"✅ Успешно! Модель {model} ответила: «{text}»"
+            except Exception as e:
+                err_str = str(e)
+                last_err = err_str
+                if "401" in err_str or "UNAUTHENTICATED" in err_str or "ACCESS_TOKEN_TYPE_UNSUPPORTED" in err_str:
+                    return False, (
+                        "❌ Ошибка 401 UNAUTHENTICATED: Ключ не авторизован в Google AI Studio.\n"
+                        "Убедитесь, что вы скопировали ключ из https://aistudio.google.com/app/apikey (он начинается на AIzaSy...)."
+                    )
+                continue
+        return False, f"❌ Все модели Gemini вернули ошибку: {last_err[:200]}"
+    except Exception as e:
+        return False, f"❌ Ошибка инициализации клиента Google GenAI: {e}"
+
+
+async def set_new_gemini_key(new_key: str) -> Tuple[bool, str]:
+    """Проверяет и сохраняет новый API-ключ Gemini."""
+    global _client, _key_is_invalid
+    cleaned = new_key.strip()
+    ok, msg = await test_gemini_connection(cleaned)
+    if not ok:
+        return False, msg
+
+    config.update_gemini_api_key(cleaned)
+    _key_is_invalid = False
+    _client = genai.Client(api_key=cleaned)
+    logger.info("Successfully updated Gemini API key and reinitialized client.")
+    return True, msg
 
 
 SYSTEM_MODERATION_PROMPT = """Ты — интеллектуальный модератор русскоязычного чата Telegram.
@@ -59,119 +117,251 @@ REASON_MAP = {
 
 _JSON_RE = re.compile(r'\{[^{}]*\}')
 
+# Локальные регулярные выражения для резервной модерации, если API временно недоступно
+MAT_REGEX = re.compile(
+    r'\b(?:ху[йиеяё]|п[ие]зд|еб[аеёуо]|[бп]ля[тд]|муд[аое]|сучк|сук[аи]|пидор|гандон|залуп|чмо)\w*',
+    re.IGNORECASE
+)
+SPAM_REGEX = re.compile(
+    r'(?:t\.me\/(?:\+|joinchat\/)|bit\.ly\/|заработ[а-я]* в интернете|раскрутк[а-я]*|казино|1xbet|ставки на спорт|сигнал[ыов] крипт)',
+    re.IGNORECASE
+)
+
 
 async def check_message(text: str) -> dict:
-    """Анализирует текст сообщения на нарушения с помощью Gemini."""
+    """Анализирует текст сообщения на нарушения с помощью Gemini или локального фильтра."""
+    global _key_is_invalid
     client = _get_client()
-    if client is None:
-        logger.warning("Gemini client unavailable, skipping AI check")
-        return {"violation": False, "reason": "none"}
 
-    for model_name in MODELS_TO_TRY:
-        try:
-            response = await client.aio.models.generate_content(
-                model=model_name,
-                contents=text,
-                config=types.GenerateContentConfig(
-                    system_instruction=SYSTEM_MODERATION_PROMPT,
-                    temperature=0.1,
-                ),
-            )
-
-            raw = (response.text or "").strip()
-            if raw.startswith("```"):
-                raw = re.sub(r'^```(?:json)?\s*', '', raw)
-                raw = re.sub(r'\s*```$', '', raw)
-
+    if client is not None:
+        for model_name in MODELS_TO_TRY:
             try:
-                parsed = json.loads(raw)
-                logger.info("AI check for '%s...': %s", text[:40], parsed)
-                return parsed
-            except json.JSONDecodeError:
-                match = _JSON_RE.search(raw)
-                if match:
-                    parsed = json.loads(match.group())
-                    logger.info("AI check (regex parsed) for '%s...': %s", text[:40], parsed)
+                response = await client.aio.models.generate_content(
+                    model=model_name,
+                    contents=text,
+                    config=types.GenerateContentConfig(
+                        system_instruction=SYSTEM_MODERATION_PROMPT,
+                        temperature=0.1,
+                    ),
+                )
+
+                raw = (response.text or "").strip()
+                if raw.startswith("```"):
+                    raw = re.sub(r'^```(?:json)?\s*', '', raw)
+                    raw = re.sub(r'\s*```$', '', raw)
+
+                try:
+                    parsed = json.loads(raw)
+                    logger.info("AI check (%s) for '%s...': %s", model_name, text[:40], parsed)
                     return parsed
+                except json.JSONDecodeError:
+                    match = _JSON_RE.search(raw)
+                    if match:
+                        parsed = json.loads(match.group())
+                        logger.info("AI check regex (%s) for '%s...': %s", model_name, text[:40], parsed)
+                        return parsed
 
-            logger.warning("Could not parse AI response: %s", raw)
-            return {"violation": False, "reason": "none"}
+            except Exception as e:
+                err_str = str(e)
+                if "401" in err_str or "UNAUTHENTICATED" in err_str or "ACCESS_TOKEN_TYPE_UNSUPPORTED" in err_str:
+                    logger.warning("Gemini key unauthenticated. Switching to local moderation.")
+                    _key_is_invalid = True
+                    break
+                logger.warning("Moderation model %s failed: %s. Trying next...", model_name, e)
+                continue
 
-        except Exception as e:
-            logger.warning("Model %s failed with: %s. Trying next...", model_name, e)
-            continue
+    # Локальная резервная проверка (если Gemini недоступен)
+    if MAT_REGEX.search(text):
+        logger.info("Local fallback detected profanity: %s...", text[:30])
+        return {"violation": True, "reason": "profanity"}
+    if SPAM_REGEX.search(text):
+        logger.info("Local fallback detected spam: %s...", text[:30])
+        return {"violation": True, "reason": "spam"}
 
-    logger.error("All Gemini models failed for check_message")
     return {"violation": False, "reason": "none"}
+
+
+def get_smart_fallback_response(user_message: str) -> str:
+    """Интеллектуальная база знаний для ответов Ботика при недоступности внешнего API."""
+    lowered = user_message.lower().strip()
+
+    # Приветствия
+    if any(w in lowered for w in ["привет", "здравствуй", "добрый день", "добрый вечер", "доброе утро", "салют", "хай", "ку", "йоу"]):
+        return (
+            "👋 Привет! Я <b>Ботик</b> — виртуальный помощник и модератор нашей супергруппы!\n\n"
+            "Я слежу за порядком, считаю варны, подсказываю правила и умею играть в Тетрис. Чем могу помочь?"
+        )
+
+    # Правила
+    if any(w in lowered for w in ["правил", "запрещен", "нельзя"]):
+        return (
+            "📜 <b>Правила супергруппы:</b>\n\n"
+            "1. 🚫 <b>Мат и грубость:</b> Нецензурные выражения запрещены в любом виде.\n"
+            "2. 🚫 <b>Оскорбления и токсичность:</b> Уважайте собеседников. Буллинг и травля пресекаются.\n"
+            "3. 🚫 <b>Спам и флуд:</b> Запрещены ссылки на сторонние каналы, крипто-скам, казино и бесконечные стикеры.\n"
+            "4. 🚫 <b>Реклама:</b> Любой пиар только по согласованию с администрацией.\n\n"
+            "⚠️ <b>Система нарушений:</b> 1-е нарушение — предупреждение (варн 1/2), 2-е — мут на 24 часа."
+        )
+
+    # Мут
+    if any(w in lowered for w in ["мут", "замут", "за что мут", "ограничени"]):
+        return (
+            "🔇 <b>За что дают мут?</b>\n\n"
+            "Мут выдаётся автоматически за повторное нарушение (при получении 2-го предупреждения 2/2), "
+            "либо вручную администраторами за грубые нарушения.\n\n"
+            "⏱ Во время мута вы не сможете отправлять сообщения и медиа в группу."
+        )
+
+    # Варны
+    if any(w in lowered for w in ["варн", "предупрежден", "снять варн", "снять предупрежд"]):
+        return (
+            "⚠️ <b>Предупреждения (варны):</b>\n\n"
+            "Каждый участник имеет лимит: максимум 2 варна.\n"
+            "• При 1-м варне вы получаете предупреждение.\n"
+            "• При 2-м варне бот отправляет в мут на 24 часа.\n\n"
+            "🔓 <b>Как снять варн?</b> Администраторы могут сбросить варны в админ-панели Ботика."
+        )
+
+    # Команды и помощь
+    if any(w in lowered for w in ["команд", "помощь", "help", "что умеешь", "функци"]):
+        return (
+            "🤖 <b>Функции и команды Ботика:</b>\n\n"
+            "• <code>✨ Открыть Ботик ✨</code> — персональный кабинет: профиль, чат со мной, Тетрис и админка\n"
+            "• <code>/set_botik</code> — закрепить стартовую карточку Ботика в топике\n"
+            "• <code>/set_ideas</code> — привязать ветку для сбора идей и баг-репортов\n"
+            "• <code>/check_ai</code> — диагностика и проверка статуса нейросети Gemini\n"
+            "• <code>/set_gemini &lt;ключ&gt;</code> — быстрая установка рабочего API ключа (для админов)"
+        )
+
+    # Идеи и баги
+    if any(w in lowered for w in ["иде", "баг", "предложен", "ошибк"]):
+        return (
+            "💡 <b>Есть идея или заметили баг?</b>\n\n"
+            "Откройте вкладку <b>«💡 Идеи»</b> в верхнем меню приложения, опишите мысль своими словами и отправьте. "
+            "Бот оформит технический репорт и отправит его прямо в топик «Идеи» супергруппы!"
+        )
+
+    # Тетрис и игры
+    if any(w in lowered for w in ["тетрис", "игр", "рекорд"]):
+        return (
+            "🎮 <b>Тетрис прямо в Telegram!</b>\n\n"
+            "Перейдите во вкладку <b>«🎮 Тетрис»</b> в верхней панели. "
+            "Игра оптимизирована под мобильные экраны (сенсорные кнопки снизу) и компьютеры (стрелки, WASD, Пробел — сброс, P — пауза). "
+            "Попробуйте побить рекорд!"
+        )
+
+    # Анекдоты и юмор
+    if any(w in lowered for w in ["анекдот", "шутк", "пошути", "рассмеши", "юмор"]):
+        return (
+            "😄 <b>Держи анекдот:</b>\n\n"
+            "— Товарищ модератор, а почему вы меня забанили?\n"
+            "— За оффтоп и спам.\n"
+            "— Но я же просто спросил, какая сегодня погода!\n"
+            "— В чате «Клуб любителей квантовой физики в темноте» погода всегда одна — абсолютный ноль! ❄️"
+        )
+
+    # Информация о создателе / боте
+    if any(w in lowered for w in ["кто ты", "о боте", "создател", "админ"]):
+        return (
+            "👑 <b>О Ботике v2.5:</b>\n\n"
+            "Я персональный модератор супергруппы <code>KareloAI</code>. Разработан для автоматизации модерации, "
+            "поддержки участников и соревновательных игр. Мой создатель — @ArTeM_aoao."
+        )
+
+    # Сообщение по умолчанию
+    return (
+        "🤖 <b>Ботик на связи!</b>\n\n"
+        "Я готов ответить на любые вопросы о группе и правилах! Сейчас внешний сервер Google Gemini ожидает настройки API-ключа (код 401).\n\n"
+        "👨‍💻 <b>Для администраторов супергруппы:</b>\n"
+        "Получите бесплатный ключ на https://aistudio.google.com/app/apikey (начинается на <code>AIzaSy...</code>) "
+        "и отправьте боту команду:\n"
+        "<code>/set_gemini ВАШ_КЛЮЧ</code>\n\n"
+        "А пока вы можете спросить меня: <i>«Правила чата»</i>, <i>«За что мут»</i>, <i>«Как снять варн»</i> или <i>«Расскажи анекдот»</i>!"
+    )
 
 
 async def chat_with_bot(user_message: str, history: Optional[List[Dict[str, str]]] = None) -> str:
     """Генерирует ответ Ботика в диалоге с пользователем."""
+    global _key_is_invalid
     client = _get_client()
-    if client is None:
-        return "Извини, сервис ИИ временно недоступен. Проверь GEMINI_API_KEY."
 
-    for model_name in MODELS_TO_TRY:
-        try:
-            # Формируем контекст беседы
-            prompt = user_message
-            if history:
-                conversation_parts = []
-                for msg in history[-6:]:
-                    role = "Пользователь" if msg.get("role") == "user" else "Ботик"
-                    conversation_parts.append(f"{role}: {msg.get('text', '')}")
-                conversation_parts.append(f"Пользователь: {user_message}")
-                prompt = "\n".join(conversation_parts)
+    if client is not None:
+        for model_name in MODELS_TO_TRY:
+            try:
+                # Формируем контекст беседы
+                prompt = user_message
+                if history:
+                    conversation_parts = []
+                    for msg in history[-6:]:
+                        role = "Пользователь" if msg.get("role") == "user" else "Ботик"
+                        conversation_parts.append(f"{role}: {msg.get('text', '')}")
+                    conversation_parts.append(f"Пользователь: {user_message}")
+                    prompt = "\n".join(conversation_parts)
 
-            response = await client.aio.models.generate_content(
-                model=model_name,
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    system_instruction=SYSTEM_CHAT_PROMPT,
-                    temperature=0.7,
-                ),
-            )
-            return response.text or "Я здесь! Чем могу помочь?"
-        except Exception as e:
-            logger.warning("Chat model %s failed: %s", model_name, e)
-            continue
+                response = await client.aio.models.generate_content(
+                    model=model_name,
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
+                        system_instruction=SYSTEM_CHAT_PROMPT,
+                        temperature=0.7,
+                    ),
+                )
+                if response.text:
+                    return response.text.strip()
+            except Exception as e:
+                err_str = str(e)
+                if "401" in err_str or "UNAUTHENTICATED" in err_str or "ACCESS_TOKEN_TYPE_UNSUPPORTED" in err_str:
+                    logger.warning("Gemini key unauthenticated. Switching chat to smart fallback.")
+                    _key_is_invalid = True
+                    break
+                logger.warning("Chat model %s failed: %s", model_name, e)
+                continue
 
-    return "Ой, что-то пошло не так при связи с нейросетью. Попробуй ещё разок!"
+    # Если Gemini недоступен или выдал ошибку — используем умный фолбэк
+    return get_smart_fallback_response(user_message)
 
 
 async def format_issue_report(raw_text: str, user_name: str) -> str:
     """Перефразирует и структурирует проблему/баг-репорт для админов с помощью Gemini."""
+    global _key_is_invalid
     client = _get_client()
-    if client is None:
-        return f"💡 <b>Идея / Сообщение о проблеме:</b>\n\n{raw_text}"
 
-    system_inst = (
-        "Ты — технический аналитик Telegram-бота модератора. "
-        "Пользователь прислал жалобу, проблему или предложение по боту на русском языке. "
-        "Твоя задача — вежливо, чётко и структурированно переформулировать суть проблемы/идеи, "
-        "чтобы администраторам и разработчикам было максимально понятно, что произошло или что предлагается улучшить.\n"
-        "Формат ответа:\n"
-        "📌 <b>Суть:</b> (кратко одной строкой)\n"
-        "🔍 <b>Детали и описание:</b> (понятное развёрнутое описание)\n"
-        "💡 <b>Рекомендация:</b> (что можно предпринять / проверить)\n"
-        "Не добавляй markdown-символы вроде ```, пиши только готовый текст с тегами <b>, <i>, если уместно."
+    if client is not None:
+        system_inst = (
+            "Ты — технический аналитик Telegram-бота модератора. "
+            "Пользователь прислал жалобу, проблему или предложение по боту на русском языке. "
+            "Твоя задача — вежливо, чётко и структурированно переформулировать суть проблемы/идеи, "
+            "чтобы администраторам и разработчикам было максимально понятно, что произошло или что предлагается улучшить.\n"
+            "Формат ответа:\n"
+            "📌 <b>Суть:</b> (кратко одной строкой)\n"
+            "🔍 <b>Детали и описание:</b> (понятное развёрнутое описание)\n"
+            "💡 <b>Рекомендация:</b> (что можно предпринять / проверить)\n"
+            "Не добавляй markdown-символы вроде ```, пиши только готовый текст с тегами <b>, <i>, если уместно."
+        )
+
+        for model_name in MODELS_TO_TRY:
+            try:
+                response = await client.aio.models.generate_content(
+                    model=model_name,
+                    contents=f"Пользователь {user_name} сообщил:\n{raw_text}",
+                    config=types.GenerateContentConfig(
+                        system_instruction=system_inst,
+                        temperature=0.3,
+                    ),
+                )
+                if response.text:
+                    return response.text.strip()
+            except Exception as e:
+                err_str = str(e)
+                if "401" in err_str or "UNAUTHENTICATED" in err_str or "ACCESS_TOKEN_TYPE_UNSUPPORTED" in err_str:
+                    _key_is_invalid = True
+                    break
+                logger.warning("Issue formatter model %s failed: %s", model_name, e)
+                continue
+
+    # Локальное структурирование
+    return (
+        f"📌 <b>Суть:</b> Обращение от участника {user_name}\n\n"
+        f"🔍 <b>Текст обращения:</b>\n{raw_text}\n\n"
+        f"💡 <b>Рекомендация:</b> Администрации ознакомиться и дать обратную связь пользователю."
     )
-
-    for model_name in MODELS_TO_TRY:
-        try:
-            response = await client.aio.models.generate_content(
-                model=model_name,
-                contents=f"Пользователь {user_name} сообщил:\n{raw_text}",
-                config=types.GenerateContentConfig(
-                    system_instruction=system_inst,
-                    temperature=0.3,
-                ),
-            )
-            if response.text:
-                return response.text.strip()
-        except Exception as e:
-            logger.warning("Issue formatter model %s failed: %s", model_name, e)
-            continue
-
-    return f"📌 <b>Суть:</b> Сообщение о проблеме\n🔍 <b>Описание:</b> {raw_text}"
-
