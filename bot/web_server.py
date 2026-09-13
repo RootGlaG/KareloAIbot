@@ -148,10 +148,14 @@ async def api_user_status(request: web.Request) -> web.Response:
         chat_id = int(chat_id_str) if chat_id_str and chat_id_str.lstrip("-").isdigit() else -1003955632241
         data = await get_user_status(user_id, chat_id)
 
+        username = request.query.get("username", "") or data.get("username", "")
+        first_name = request.query.get("first_name", "") or data.get("full_name", "")
+        photo_url = request.query.get("photo_url", "")
+
         is_adm = await check_admin_permission(bot, user_id, chat_id)
         data["is_admin"] = is_adm
 
-        await upsert_member(user_id, chat_id, data.get("username", ""), data.get("full_name", ""), is_adm)
+        await upsert_member(user_id, chat_id, username, first_name, is_adm, photo_url=photo_url)
 
         return setup_cors(web.json_response(data))
     except Exception as e:

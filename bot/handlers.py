@@ -49,6 +49,20 @@ def get_webapp_url() -> str:
     return WEB_APP_URL
 
 
+def get_botik_card_text() -> str:
+    return (
+        "🤖 <b>ПЕРСОНАЛЬНЫЙ БОТИК v2.5</b>\n\n"
+        "Личный кабинет каждого участника супергруппы.\n\n"
+        "• 👤 <b>Профиль:</b> статус, предупреждения (варны) и история\n"
+        "• 💬 <b>ИИ Ботик:</b> умный помощник с нейросетью Gemini\n"
+        "• 🎮 <b>Тетрис:</b> соревновательная игра прямо в Telegram\n"
+        "• 👥 <b>Админка:</b> список участников, аватары и модерация\n\n"
+        "💡 <b>Топик для багов и предложений:</b>\n"
+        "Чтобы привязать ветку «Идеи», напишите в ней команду: <code>/set_ideas</code>\n\n"
+        "👇 Нажмите кнопку ниже, чтобы открыть ваш личный Ботик:"
+    )
+
+
 def make_group_keyboard(user_id: int, chat_id: Optional[int] = None) -> InlineKeyboardMarkup:
     app_link = f"https://t.me/{BOT_USERNAME}/app?startapp={user_id}"
     return InlineKeyboardMarkup(
@@ -57,6 +71,12 @@ def make_group_keyboard(user_id: int, chat_id: Optional[int] = None) -> InlineKe
                 InlineKeyboardButton(
                     text="✨ Открыть Ботик ✨",
                     url=app_link
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🔄 Обновить карточку",
+                    callback_data="refresh_botik_card"
                 )
             ]
         ]
@@ -264,15 +284,7 @@ async def cmd_set_botik(message: Message, bot: Bot) -> None:
     except Exception:
         pass
 
-    card_text = (
-        "🤖 <b>ПЕРСОНАЛЬНЫЙ БОТИК</b>\n\n"
-        "Личный кабинет каждого участника супергруппы.\n\n"
-        "• 👤 <b>Профиль:</b> статус, варны и история нарушений\n"
-        "• 💬 <b>ИИ Ботик:</b> ответы на любые вопросы\n"
-        "• 🎮 <b>Тетрис:</b> игра прямо в Telegram без скролла\n"
-        "• 👥 <b>Админка:</b> список всех участников и модерация\n\n"
-        "Нажмите кнопку ниже, чтобы открыть ваш личный Ботик 👇"
-    )
+    card_text = get_botik_card_text()
 
     try:
         try:
@@ -296,6 +308,41 @@ async def cmd_set_botik(message: Message, bot: Bot) -> None:
             pass
     except Exception as e:
         logger.error("Error sending set_botik message: %s", e)
+
+
+# ──────────────────────────────────────────────
+# Callback: 🔄 Обновить карточку Ботика
+# ──────────────────────────────────────────────
+@router.callback_query(F.data == "refresh_botik_card")
+async def on_refresh_botik_card(callback: CallbackQuery, bot: Bot) -> None:
+    chat_id = callback.message.chat.id
+    user_id = callback.from_user.id
+    is_adm = await is_chat_admin(bot, chat_id, user_id)
+    if not is_adm:
+        await callback.answer("❌ Только администраторы могут обновлять карточку Ботика.", show_alert=True)
+        return
+
+    thread_id = callback.message.message_thread_id or 0
+    card_text = get_botik_card_text()
+
+    try:
+        await callback.message.edit_text(
+            text=card_text,
+            reply_markup=make_group_keyboard(user_id, chat_id)
+        )
+        await callback.answer("✅ Карточка Ботика успешно обновлена и синхронизирована!", show_alert=True)
+    except Exception:
+        try:
+            sent_msg = await bot.send_message(
+                chat_id=chat_id,
+                message_thread_id=thread_id if thread_id != 0 else None,
+                text=card_text,
+                reply_markup=make_group_keyboard(user_id, chat_id)
+            )
+            await bot.pin_chat_message(chat_id=chat_id, message_id=sent_msg.message_id, disable_notification=True)
+            await callback.answer("✅ Отправлена и закреплена свежая карточка!", show_alert=True)
+        except Exception as ex:
+            await callback.answer(f"Ошибка: {ex}", show_alert=True)
 
 
 # ──────────────────────────────────────────────

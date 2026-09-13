@@ -558,47 +558,130 @@
             margin-top: 2px;
         }
 
+        .admin-search-box {
+            display: flex;
+            align-items: center;
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-sm);
+            padding: 8px 12px;
+            margin: 6px 0 8px;
+            gap: 8px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+        }
+        .admin-search-input {
+            background: transparent;
+            border: none;
+            outline: none;
+            color: var(--text-color);
+            font-size: 13px;
+            width: 100%;
+            font-family: inherit;
+        }
+        .filter-chips-row {
+            display: flex;
+            gap: 6px;
+            overflow-x: auto;
+            padding: 2px 2px 8px;
+            margin-bottom: 6px;
+            scrollbar-width: none;
+        }
+        .filter-chip {
+            padding: 5px 12px;
+            border-radius: 20px;
+            font-size: 11px;
+            font-weight: 700;
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            color: var(--hint-color);
+            cursor: pointer;
+            white-space: nowrap;
+            transition: all 0.15s ease;
+            user-select: none;
+        }
+        .filter-chip.active {
+            background: var(--accent-color);
+            color: var(--accent-text);
+            border-color: var(--accent-color);
+            font-weight: 800;
+            box-shadow: 0 2px 6px rgba(240, 185, 11, 0.2);
+        }
+
         .member-item {
             display: flex;
             align-items: center;
             justify-content: space-between;
-            padding: 8px 6px;
+            padding: 10px 8px;
             border-bottom: 1px solid var(--border-color);
             cursor: pointer;
-            gap: 10px;
+            gap: 12px;
+            border-radius: var(--radius-sm);
+            transition: background 0.15s ease, transform 0.12s ease;
+        }
+        .member-item:active {
+            transform: scale(0.98);
+        }
+        .member-item:hover {
+            background: rgba(255, 255, 255, 0.03);
         }
         .member-avatar-mini {
             position: relative;
-            width: 38px;
-            height: 38px;
+            width: 42px;
+            height: 42px;
             flex-shrink: 0;
         }
         .member-avatar-img {
-            width: 38px;
-            height: 38px;
+            width: 42px;
+            height: 42px;
             border-radius: 50%;
             object-fit: cover;
-            border: 1px solid var(--border-color);
+            border: 1.5px solid var(--border-color);
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 2;
+        }
+        .avatar-initials-fallback {
+            width: 42px;
+            height: 42px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 15px;
+            font-weight: 800;
+            color: #FFFFFF;
+            text-shadow: 0 1px 2px rgba(0,0,0,0.3);
+            border: 1.5px solid rgba(255, 255, 255, 0.15);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 1;
         }
         .mini-online-dot {
             position: absolute;
             bottom: 0;
             right: 0;
-            width: 10px;
-            height: 10px;
+            width: 11px;
+            height: 11px;
             border-radius: 50%;
             background-color: var(--success-color);
             border: 2px solid var(--card-bg);
+            box-shadow: 0 0 5px var(--success-color);
+            z-index: 3;
         }
         .mini-offline-dot {
             position: absolute;
             bottom: 0;
             right: 0;
-            width: 10px;
-            height: 10px;
+            width: 11px;
+            height: 11px;
             border-radius: 50%;
             background-color: var(--hint-color);
             border: 2px solid var(--card-bg);
+            opacity: 0.7;
+            z-index: 3;
         }
 
         .member-info {
@@ -613,25 +696,41 @@
             text-overflow: ellipsis;
             display: flex;
             align-items: center;
-            gap: 4px;
+            gap: 6px;
         }
         .member-sub {
             font-size: 11px;
             color: var(--hint-color);
-            margin-top: 1px;
+            margin-top: 3px;
             display: flex;
             align-items: center;
             gap: 6px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .member-action-btn {
+            font-size: 16px;
+            color: var(--hint-color);
+            padding: 6px;
+            border-radius: 6px;
+            transition: all 0.15s ease;
+        }
+        .member-item:hover .member-action-btn {
+            color: var(--accent-color);
+            transform: scale(1.15);
         }
         .badge-role {
-            padding: 1px 5px;
+            padding: 2px 6px;
             border-radius: 4px;
             font-size: 9px;
             font-weight: 700;
+            letter-spacing: 0.2px;
         }
         .badge-admin {
             background: rgba(240, 185, 11, 0.2);
             color: var(--accent-color);
+            border: 1px solid rgba(240, 185, 11, 0.3);
         }
         .badge-user {
             background: rgba(132, 142, 156, 0.15);
@@ -964,9 +1063,24 @@
                         <button onclick="loadAdminStats(); playSound('click');" style="background:none; border:none; color:var(--accent-color); font-size:12px; font-weight:bold; cursor:pointer;">🔄 Обновить</button>
                     </div>
 
-                    <!-- Быстрый поиск / добавление по @username или ID -->
+                    <!-- Быстрый поиск в реальном времени -->
+                    <div class="admin-search-box">
+                        <span style="font-size: 13px; opacity: 0.7;">🔍</span>
+                        <input type="text" id="member-search" class="admin-search-input" placeholder="Поиск по имени, @username или ID..." oninput="onSearchMembers(this.value)">
+                        <button id="search-clear-btn" onclick="clearMemberSearch()" style="background:none; border:none; color:var(--hint-color); cursor:pointer; display:none; font-size:12px;">✕</button>
+                    </div>
+
+                    <!-- Фильтры участников -->
+                    <div class="filter-chips-row">
+                        <div class="filter-chip active" data-filter="all" onclick="setMemberFilter('all', this)">Все</div>
+                        <div class="filter-chip" data-filter="admins" onclick="setMemberFilter('admins', this)">🛡️ Админы</div>
+                        <div class="filter-chip" data-filter="warns" onclick="setMemberFilter('warns', this)">⚠️ С варнами</div>
+                        <div class="filter-chip" data-filter="online" onclick="setMemberFilter('online', this)">🟢 В сети</div>
+                    </div>
+
+                    <!-- Ручное добавление по @username или ID -->
                     <div style="display: flex; gap: 6px; margin-bottom: 8px;">
-                        <input type="text" id="add-member-input" class="chat-input" placeholder="@username или ID участника..." style="padding: 6px 10px; font-size: 12px; border-radius: 6px;">
+                        <input type="text" id="add-member-input" class="chat-input" placeholder="@username или ID для добавления..." style="padding: 6px 10px; font-size: 12px; border-radius: 6px;">
                         <button onclick="addMemberById()" class="btn-primary" style="width: auto; padding: 6px 12px; font-size: 11px;">➕ Добавить</button>
                     </div>
                     <div id="add-member-status" style="font-size: 11px; margin-bottom: 6px; display: none;"></div>
@@ -1127,49 +1241,146 @@
             try {
                 const ctx = getAudioContext();
                 if (!ctx) return;
-
-                const osc = ctx.createOscillator();
-                const gain = ctx.createGain();
-                osc.connect(gain);
-                gain.connect(ctx.destination);
-
                 const now = ctx.currentTime;
 
                 if (type === 'click') {
+                    const osc = ctx.createOscillator();
+                    const gain = ctx.createGain();
+                    osc.connect(gain);
+                    gain.connect(ctx.destination);
                     osc.type = 'sine';
-                    osc.frequency.setValueAtTime(600, now);
-                    osc.frequency.exponentialRampToValueAtTime(800, now + 0.04);
+                    osc.frequency.setValueAtTime(720, now);
+                    osc.frequency.exponentialRampToValueAtTime(880, now + 0.03);
                     gain.gain.setValueAtTime(0.12, now);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.035);
+                    osc.start(now);
+                    osc.stop(now + 0.035);
+                } else if (type === 'tab') {
+                    const osc = ctx.createOscillator();
+                    const gain = ctx.createGain();
+                    osc.connect(gain);
+                    gain.connect(ctx.destination);
+                    osc.type = 'triangle';
+                    osc.frequency.setValueAtTime(420, now);
+                    osc.frequency.exponentialRampToValueAtTime(560, now + 0.04);
+                    gain.gain.setValueAtTime(0.14, now);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.045);
+                    osc.start(now);
+                    osc.stop(now + 0.045);
+                } else if (type === 'sheet') {
+                    const osc = ctx.createOscillator();
+                    const gain = ctx.createGain();
+                    osc.connect(gain);
+                    gain.connect(ctx.destination);
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(260, now);
+                    osc.frequency.exponentialRampToValueAtTime(520, now + 0.09);
+                    gain.gain.setValueAtTime(0.12, now);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
+                    osc.start(now);
+                    osc.stop(now + 0.1);
+                } else if (type === 'success') {
+                    [523.25, 659.25, 783.99].forEach((freq, idx) => {
+                        const osc = ctx.createOscillator();
+                        const gain = ctx.createGain();
+                        osc.connect(gain);
+                        gain.connect(ctx.destination);
+                        osc.type = 'sine';
+                        osc.frequency.setValueAtTime(freq, now + idx * 0.06);
+                        gain.gain.setValueAtTime(0, now);
+                        gain.gain.setValueAtTime(0.14, now + idx * 0.06);
+                        gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.06 + 0.22);
+                        osc.start(now + idx * 0.06);
+                        osc.stop(now + idx * 0.06 + 0.23);
+                    });
+                } else if (type === 'warning') {
+                    [280, 350].forEach((freq) => {
+                        const osc = ctx.createOscillator();
+                        const gain = ctx.createGain();
+                        osc.connect(gain);
+                        gain.connect(ctx.destination);
+                        osc.type = 'triangle';
+                        osc.frequency.setValueAtTime(freq, now);
+                        gain.gain.setValueAtTime(0.12, now);
+                        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+                        osc.start(now);
+                        osc.stop(now + 0.13);
+                    });
+                } else if (type === 'danger') {
+                    const osc = ctx.createOscillator();
+                    const gain = ctx.createGain();
+                    osc.connect(gain);
+                    gain.connect(ctx.destination);
+                    osc.type = 'sawtooth';
+                    osc.frequency.setValueAtTime(140, now);
+                    osc.frequency.exponentialRampToValueAtTime(60, now + 0.15);
+                    gain.gain.setValueAtTime(0.16, now);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.16);
+                    osc.start(now);
+                    osc.stop(now + 0.17);
+                } else if (type === 'drop') {
+                    const osc = ctx.createOscillator();
+                    const gain = ctx.createGain();
+                    osc.connect(gain);
+                    gain.connect(ctx.destination);
+                    osc.type = 'square';
+                    osc.frequency.setValueAtTime(180, now);
+                    osc.frequency.exponentialRampToValueAtTime(70, now + 0.05);
+                    gain.gain.setValueAtTime(0.09, now);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.055);
+                    osc.start(now);
+                    osc.stop(now + 0.06);
+                } else if (type === 'tetris_move') {
+                    const osc = ctx.createOscillator();
+                    const gain = ctx.createGain();
+                    osc.connect(gain);
+                    gain.connect(ctx.destination);
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(240, now);
+                    gain.gain.setValueAtTime(0.06, now);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.02);
+                    osc.start(now);
+                    osc.stop(now + 0.025);
+                } else if (type === 'tetris_rotate') {
+                    const osc = ctx.createOscillator();
+                    const gain = ctx.createGain();
+                    osc.connect(gain);
+                    gain.connect(ctx.destination);
+                    osc.type = 'triangle';
+                    osc.frequency.setValueAtTime(380, now);
+                    osc.frequency.exponentialRampToValueAtTime(540, now + 0.035);
+                    gain.gain.setValueAtTime(0.09, now);
                     gain.gain.exponentialRampToValueAtTime(0.001, now + 0.04);
                     osc.start(now);
-                    osc.stop(now + 0.04);
-                } else if (type === 'sheet') {
-                    osc.type = 'triangle';
-                    osc.frequency.setValueAtTime(320, now);
-                    osc.frequency.exponentialRampToValueAtTime(540, now + 0.08);
-                    gain.gain.setValueAtTime(0.15, now);
-                    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
-                    osc.start(now);
-                    osc.stop(now + 0.08);
-                } else if (type === 'success') {
-                    osc.type = 'sine';
-                    osc.frequency.setValueAtTime(523.25, now); // C5
-                    osc.frequency.setValueAtTime(659.25, now + 0.08); // E5
-                    gain.gain.setValueAtTime(0.15, now);
-                    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
-                    osc.start(now);
-                    osc.stop(now + 0.2);
-                } else if (type === 'drop') {
-                    osc.type = 'square';
-                    osc.frequency.setValueAtTime(240, now);
-                    osc.frequency.exponentialRampToValueAtTime(100, now + 0.05);
-                    gain.gain.setValueAtTime(0.08, now);
-                    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
-                    osc.start(now);
-                    osc.stop(now + 0.05);
+                    osc.stop(now + 0.045);
+                } else if (type === 'tetris_line') {
+                    [523.25, 659.25, 783.99, 1046.5].forEach((freq, idx) => {
+                        const osc = ctx.createOscillator();
+                        const gain = ctx.createGain();
+                        osc.connect(gain);
+                        gain.connect(ctx.destination);
+                        osc.type = 'sine';
+                        osc.frequency.setValueAtTime(freq, now + idx * 0.045);
+                        gain.gain.setValueAtTime(0.13, now + idx * 0.045);
+                        gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.045 + 0.18);
+                        osc.start(now + idx * 0.045);
+                        osc.stop(now + idx * 0.045 + 0.19);
+                    });
+                } else if (type === 'tetris_gameover') {
+                    [440, 370, 311, 261].forEach((freq, idx) => {
+                        const osc = ctx.createOscillator();
+                        const gain = ctx.createGain();
+                        osc.connect(gain);
+                        gain.connect(ctx.destination);
+                        osc.type = 'triangle';
+                        osc.frequency.setValueAtTime(freq, now + idx * 0.08);
+                        gain.gain.setValueAtTime(0.12, now + idx * 0.08);
+                        gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.08 + 0.25);
+                        osc.start(now + idx * 0.08);
+                        osc.stop(now + idx * 0.08 + 0.26);
+                    });
                 }
             } catch (e) {
-                // Игнорируем ограничения автовоспроизведения браузера
             }
         }
 
@@ -1180,6 +1391,40 @@
             document.getElementById('btn-sound-off').classList.toggle('active', !enabled);
             if (enabled) playSound('success');
             if (tg?.HapticFeedback) tg.HapticFeedback.selectionChanged();
+        }
+
+        // ─── АВАТАРЫ И ГРАДИЕНТЫ В СТИЛЕ TELEGRAM ───
+        const AVATAR_GRADIENTS = [
+            'linear-gradient(135deg, #FF512F 0%, #DD2476 100%)',
+            'linear-gradient(135deg, #FF8008 0%, #FFC837 100%)',
+            'linear-gradient(135deg, #11998E 0%, #38EF7D 100%)',
+            'linear-gradient(135deg, #00B4DB 0%, #0083B0 100%)',
+            'linear-gradient(135deg, #8E2DE2 0%, #4A00E0 100%)',
+            'linear-gradient(135deg, #F857A6 0%, #FF5858 100%)',
+            'linear-gradient(135deg, #F09819 0%, #EDDE5D 100%)',
+            'linear-gradient(135deg, #1D976C 0%, #93F9B9 100%)'
+        ];
+
+        function getAvatarGradient(seed) {
+            const s = String(seed || '0');
+            let hash = 0;
+            for (let i = 0; i < s.length; i++) {
+                hash = (hash << 5) - hash + s.charCodeAt(i);
+                hash |= 0;
+            }
+            const idx = Math.abs(hash) % AVATAR_GRADIENTS.length;
+            return AVATAR_GRADIENTS[idx];
+        }
+
+        function getInitials(name, username) {
+            const n = (name || username || '').trim();
+            if (!n) return '👤';
+            const clean = n.replace(/^@/, '');
+            const parts = clean.split(/\s+/).filter(Boolean);
+            if (parts.length >= 2) {
+                return (parts[0][0] + parts[1][0]).toUpperCase();
+            }
+            return clean.slice(0, 2).toUpperCase();
         }
 
         // Параметры пользователя
@@ -1219,10 +1464,11 @@
             document.getElementById('user-role-badge').className = "role-badge role-user";
         }
 
-        // Загрузка реального аватара
+        // Загрузка реального аватара с градиентным фолбэком
         const avatarImg = document.getElementById('user-avatar-img');
         const avatarFallback = document.getElementById('user-avatar-placeholder');
-        avatarFallback.textContent = (currentUser.firstName[0] || "👤").toUpperCase();
+        avatarFallback.style.background = getAvatarGradient(currentUser.id || currentUser.username);
+        avatarFallback.textContent = getInitials(currentUser.firstName, currentUser.username);
 
         const API_BASE = (window.location.origin && window.location.origin !== 'null' && !window.location.origin.includes('github.io'))
             ? window.location.origin
@@ -1342,7 +1588,14 @@
         // ─── 1. ПРОФИЛЬ ───
         async function loadUserStatus() {
             try {
-                const res = await fetch(`${API_BASE}/api/user_status?user_id=${currentUser.id}&chat_id=${currentUser.chatId || ''}`);
+                const params = new URLSearchParams({
+                    user_id: currentUser.id,
+                    chat_id: currentUser.chatId || '',
+                    username: currentUser.username || '',
+                    first_name: currentUser.firstName || '',
+                    photo_url: currentUser.photoUrl || ''
+                });
+                const res = await fetch(`${API_BASE}/api/user_status?${params.toString()}`);
                 if (!res.ok) throw new Error("API error");
                 const data = await res.json();
 
@@ -1359,6 +1612,11 @@
                 } else {
                     roleBadge.textContent = "👤 Участник";
                     roleBadge.className = "role-badge role-user";
+                }
+
+                if (data.photo_url) {
+                    currentUser.photoUrl = data.photo_url;
+                    avatarImg.src = data.photo_url;
                 }
 
                 updateAdminTabVisibility();
@@ -1469,9 +1727,105 @@
             container.scrollTop = container.scrollHeight;
         }
 
-        // ─── 3. АДМИНКА (СПИСОК ВСЕХ УЧАСТНИКОВ + ОНЛАЙН) ───
+        // ─── 3. АДМИНКА (СПИСОК ВСЕХ УЧАСТНИКОВ, ПОИСК И ФИЛЬТРЫ) ───
         let activeSheetUser = null;
         let selectedMuteDuration = 3600;
+        let allMembersData = [];
+        let currentMemberFilter = 'all';
+        let currentSearchQuery = '';
+
+        function onSearchMembers(val) {
+            currentSearchQuery = (val || '').trim().toLowerCase();
+            const clearBtn = document.getElementById('search-clear-btn');
+            if (clearBtn) clearBtn.style.display = currentSearchQuery ? 'block' : 'none';
+            renderMembersList();
+        }
+
+        function clearMemberSearch() {
+            playSound('click');
+            const input = document.getElementById('member-search');
+            if (input) input.value = '';
+            currentSearchQuery = '';
+            const clearBtn = document.getElementById('search-clear-btn');
+            if (clearBtn) clearBtn.style.display = 'none';
+            renderMembersList();
+        }
+
+        function setMemberFilter(filter, el) {
+            playSound('click');
+            currentMemberFilter = filter;
+            document.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
+            if (el) el.classList.add('active');
+            renderMembersList();
+        }
+
+        function renderMembersList() {
+            const membersList = document.getElementById('members-list');
+            if (!membersList) return;
+
+            let filtered = [...allMembersData];
+
+            // 1. Фильтр по категориям
+            if (currentMemberFilter === 'admins') {
+                filtered = filtered.filter(m => m.is_admin);
+            } else if (currentMemberFilter === 'warns') {
+                filtered = filtered.filter(m => (m.warnings || 0) > 0);
+            } else if (currentMemberFilter === 'online') {
+                filtered = filtered.filter(m => m.is_online);
+            }
+
+            // 2. Поисковой фильтр
+            if (currentSearchQuery) {
+                filtered = filtered.filter(m => {
+                    const name = (m.full_name || '').toLowerCase();
+                    const uname = (m.username || '').toLowerCase();
+                    const uid = String(m.user_id || '');
+                    return name.includes(currentSearchQuery) || uname.includes(currentSearchQuery) || uid.includes(currentSearchQuery);
+                });
+            }
+
+            document.getElementById('members-count-badge').textContent = filtered.length;
+
+            if (filtered.length === 0) {
+                membersList.innerHTML = `<div style="color:var(--hint-color); text-align:center; padding:18px; font-size:12px;">Участники не найдены 🔍</div>`;
+                return;
+            }
+
+            membersList.innerHTML = filtered.map(m => {
+                const name = m.full_name || (m.username ? `@${m.username}` : `Участник ${m.user_id}`);
+                const handle = m.username ? `@${m.username}` : `ID: ${m.user_id}`;
+                const badge = m.is_admin ? `<span class="badge-role badge-admin">Админ</span>` : `<span class="badge-role badge-user">Участник</span>`;
+                const warnColor = (m.warnings || 0) > 0 ? 'var(--danger-color)' : 'var(--success-color)';
+
+                const dotClass = m.is_online ? 'mini-online-dot' : 'mini-offline-dot';
+                const statusText = m.is_online ? '<span style="color:var(--success-color); font-weight:bold;">В сети</span>' : (m.last_seen_str || 'Недавно');
+
+                const gradient = getAvatarGradient(m.user_id || m.username);
+                const initials = getInitials(m.full_name, m.username);
+                const photoUrl = m.photo_url || `${API_BASE}/api/avatar/${m.user_id}`;
+
+                return `
+                    <div class="member-item" onclick="openMemberSheet(${JSON.stringify(m).replace(/"/g, '&quot;')})">
+                        <div class="member-avatar-mini" style="background: ${gradient};">
+                            <div class="avatar-initials-fallback">${initials}</div>
+                            <img src="${photoUrl}" class="member-avatar-img" onload="this.style.opacity=1;" onerror="this.remove();" style="opacity: 0; transition: opacity 0.2s ease;">
+                            <div class="${dotClass}"></div>
+                        </div>
+                        <div class="member-info">
+                            <div class="member-name">${name} ${badge}</div>
+                            <div class="member-sub">
+                                <span>${handle}</span>
+                                <span>•</span>
+                                <span>${statusText}</span>
+                                <span>•</span>
+                                <b style="color:${warnColor}">${m.warnings || 0}/2 варнов</b>
+                            </div>
+                        </div>
+                        <div class="member-action-btn">⚙️</div>
+                    </div>
+                `;
+            }).join('');
+        }
 
         async function loadAdminStats() {
             updateAdminTabVisibility();
@@ -1487,45 +1841,9 @@
 
                 const totalGroupMembers = data.total_group_members || 17;
                 document.getElementById('total-members-badge').textContent = totalGroupMembers;
-                document.getElementById('members-count-badge').textContent = data.members?.length || 0;
 
-                const membersList = document.getElementById('members-list');
-                if (data.members && data.members.length > 0) {
-                    membersList.innerHTML = data.members.map(m => {
-                        const name = m.full_name || (m.username ? `@${m.username}` : `User ${m.user_id}`);
-                        const handle = m.username ? `@${m.username}` : `ID: ${m.user_id}`;
-                        const badge = m.is_admin ? `<span class="badge-role badge-admin">Админ</span>` : `<span class="badge-role badge-user">Участник</span>`;
-                        const warnColor = m.warnings > 0 ? 'var(--danger-color)' : 'var(--success-color)';
-
-                        // Индикатор онлайн / оффлайн
-                        const dotClass = m.is_online ? 'mini-online-dot' : 'mini-offline-dot';
-                        const statusText = m.is_online ? '<span style="color:var(--success-color); font-weight:bold;">В сети</span>' : m.last_seen_str;
-
-                        const avatarSrc = `${API_BASE}/api/avatar/${m.user_id}`;
-
-                        return `
-                            <div class="member-item" onclick="openMemberSheet(${JSON.stringify(m).replace(/"/g, '&quot;')})">
-                                <div class="member-avatar-mini">
-                                    <img src="${avatarSrc}" class="member-avatar-img" onerror="this.src='https://telegram.org/img/t_logo.png'">
-                                    <div class="${dotClass}"></div>
-                                </div>
-                                <div class="member-info">
-                                    <div class="member-name">${name} ${badge}</div>
-                                    <div class="member-sub">
-                                        <span>${handle}</span>
-                                        <span>•</span>
-                                        <span>${statusText}</span>
-                                        <span>•</span>
-                                        <b style="color:${warnColor}">${m.warnings}/2 варнов</b>
-                                    </div>
-                                </div>
-                                <div style="font-size: 16px; color: var(--hint-color); padding-left: 6px;">⚙️</div>
-                            </div>
-                        `;
-                    }).join('');
-                } else {
-                    membersList.innerHTML = `<div style="color:var(--hint-color); text-align:center; padding:10px; font-size:12px;">Участники появятся после команды /scan или сообщений в чате</div>`;
-                }
+                allMembersData = data.members || [];
+                renderMembersList();
             } catch (e) {
                 console.log("Stats error", e);
             }
@@ -1650,7 +1968,7 @@
                     ++y;
                     player.score += rowCount * 10;
                     rowCount *= 2;
-                    playSound('success');
+                    playSound('tetris_line');
                     if (tg?.HapticFeedback) tg.HapticFeedback.impactOccurred('medium');
                 }
             }
@@ -1755,7 +2073,7 @@
         function playerMove(dir) {
             player.pos.x += dir;
             if (collide(arena, player)) player.pos.x -= dir;
-            playSound('click');
+            playSound('tetris_move');
             if (tg?.HapticFeedback) tg.HapticFeedback.impactOccurred('light');
         }
 
@@ -1770,6 +2088,7 @@
                 player.score = 0;
                 scoreEl.textContent = 0;
                 gameOver = true;
+                playSound('tetris_gameover');
                 if (tg?.HapticFeedback) tg.HapticFeedback.notificationOccurred('error');
             }
         }
@@ -1787,7 +2106,7 @@
                     return;
                 }
             }
-            playSound('click');
+            playSound('tetris_rotate');
             if (tg?.HapticFeedback) tg.HapticFeedback.impactOccurred('light');
         }
 

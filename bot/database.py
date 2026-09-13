@@ -56,6 +56,10 @@ async def init_db() -> None:
             await db.execute("ALTER TABLE chat_settings ADD COLUMN ideas_thread_id INTEGER DEFAULT NULL")
         except Exception:
             pass
+        try:
+            await db.execute("ALTER TABLE chat_members ADD COLUMN photo_url TEXT DEFAULT ''")
+        except Exception:
+            pass
         await db.execute("""
             CREATE TABLE IF NOT EXISTS bot_stats (
                 key   TEXT PRIMARY KEY,
@@ -73,7 +77,8 @@ async def upsert_member(
     chat_id: int,
     username: str = "",
     full_name: str = "",
-    is_admin: bool = False
+    is_admin: bool = False,
+    photo_url: str = ""
 ) -> None:
     """Добавляет или обновляет информацию об участнике чата."""
     now = datetime.datetime.now(datetime.timezone.utc).isoformat()
@@ -95,14 +100,18 @@ async def upsert_member(
                     await db.execute("DELETE FROM chat_members WHERE user_id = ? AND chat_id = ?", (pseudo_id, chat_id))
 
         await db.execute("""
-            INSERT INTO chat_members (user_id, chat_id, username, full_name, is_admin, last_seen)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO chat_members (user_id, chat_id, username, full_name, is_admin, last_seen, photo_url)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(user_id, chat_id) DO UPDATE SET
                 username = CASE WHEN ? != '' THEN ? ELSE username END,
                 full_name = CASE WHEN ? != '' THEN ? ELSE full_name END,
                 is_admin = ?,
-                last_seen = ?
-        """, (user_id, chat_id, username, full_name, 1 if is_admin else 0, now, username, username, full_name, full_name, 1 if is_admin else 0, now))
+                last_seen = ?,
+                photo_url = CASE WHEN ? != '' THEN ? ELSE photo_url END
+        """, (
+            user_id, chat_id, username, full_name, 1 if is_admin else 0, now, photo_url,
+            username, username, full_name, full_name, 1 if is_admin else 0, now, photo_url, photo_url
+        ))
         await db.commit()
 
 
@@ -112,6 +121,7 @@ async def get_all_members(chat_id: Optional[int] = None) -> List[Dict[str, Any]]
         db.row_factory = aiosqlite.Row
         query = """
             SELECT m.user_id, m.chat_id, m.username, m.full_name, m.is_admin, m.last_seen,
+                   COALESCE(m.photo_url, '') as photo_url,
                    COALESCE(u.warnings, 0) as warnings
             FROM chat_members m
             LEFT JOIN users u ON m.user_id = u.user_id AND m.chat_id = u.chat_id
