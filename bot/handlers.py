@@ -61,6 +61,11 @@ MUTE_DURATION = datetime.timedelta(seconds=86400)
 BOT_NAME = "🤖 Ботик"
 BOT_USERNAME = "kareloai_bot"
 
+# Трекер антифлуда короткими сообщениями и стикерами: (chat_id, user_id) -> [timestamps]
+_short_flood_history: dict[tuple[int, int], list[float]] = {}
+FLOOD_WINDOW_SECONDS = 180.0  # Окно: 3 минуты (1-3 мин)
+FLOOD_LIMIT = 3               # Лимит: 3 сообщения подряд
+
 
 def get_webapp_url() -> str:
     return WEB_APP_URL
@@ -825,9 +830,143 @@ async def group_message_handler(message: Message, bot: Bot) -> None:
                 pass
         return
 
-    # 2. Если это не текстовое сообщение или системная команда:
-    text = message.text or message.caption or ""
+    # 2. ПРОВЕРКА НА АНТИФЛУД (3 подряд сообщения короче 3 символов или стикеров за 1-3 минуты)
+    is_sticker = (message.sticker is not None) or (message.animation is not None)
+    raw_text = (message.text or message.caption or "").strip()
+    is_short_text = bool(raw_text) and len(raw_text) < 3 and not ("http://" in raw_text or "https://" in raw_text)
+    is_flood_item = is_sticker or is_short_text
+
+    flood_key = (chat_id, user_id)
+    now_ts = datetime.datetime.now(datetime.timezone.utc).timestamp()
+
+    if not is_admin or MODERATE_ALL:
+        if is_flood_item:
+            recent_stamps = [ts for ts in _short_flood_history.get(flood_key, []) if (now_ts - ts) <= FLOOD_WINDOW_SECONDS]
+            recent_stamps.append(now_ts)
+            _short_flood_history[flood_key] = recent_stamps
+
+            if len(recent_stamps) >= FLOOD_LIMIT:
+                _short_flood_history.pop(flood_key, None)
+                reason_ru = "Флуд короткими сообщениями / стикерами (3 подряд)"
+                logger.warning("🚨 ФЛУД от %s в топике %s: 3 коротких сообщения/стикера подряд", username, thread_id)
+
+                try:
+                    await message.delete()
+                except Exception as e:
+                    logger.error("Failed to delete flood message: %s", e)
+
+                current_warns = await get_warnings(user_id, chat_id)
+
+                if current_warns == 0:
+                    await add_warning(user_id, chat_id, user.username or "", user.full_name or "")
+                    await log_violation(user_id, chat_id, username, reason_ru, raw_text or "[Стикер]", "warning_1")
+
+                    notice_text = (
+                        f"⚠️ <b>Предупреждение [1/2] для {username}</b>\n\n"
+                        f"Причина: <b>{reason_ru}</b>.\n"
+                        f"Пожалуйста, не спамьте короткими фразами или стикерами подряд.\n"
+                        f"Предупреждение занесено в профиль Ботика. При повторном нарушении — <b>мут на 24 часа</b>."
+                    )
+
+                    if botik_thread_id is not None:
+                        try:
+                            await bot.send_message(
+                                chat_id=chat_id,
+                                message_thread_id=botik_thread_id if botik_thread_id != 0 else None,
+                                text=notice_text,
+                                reply_markup=make_group_keyboard(user_id, chat_id)
+                            )
+                        except Exception:
+                            pass
+
+                    try:
+                        await bot.send_message(
+                            chat_id=chat_id,
+                            message_thread_id=thread_id if thread_id != 0 else None,
+                            text=f"⚠️ {username}, предупреждение <b>1/2</b> за флуд короткими сообщениями/стикерами (3 подряд).",
+                            reply_markup=make_group_keyboard(user_id, chat_id)
+                        )
+                    except Exception:
+                        pass
+
+                    try:
+                        await bot.send_message(
+                            chat_id=user_id,
+                            text=(
+                                f"⚠️ <b>Предупреждение от Ботика [1/2]</b>\n\n"
+                                f"Вы получили предупреждение за флуд короткими сообщениями или стикерами (3 подряд за 3 минуты).\n"
+                                f"При следующем нарушении — мут на 24 часа."
+                            ),
+                            reply_markup=make_private_keyboard(user_id, chat_id)
+                        )
+                    except Exception:
+                        pass
+
+                else:
+                    until = datetime.datetime.now(datetime.timezone.utc) + MUTE_DURATION
+                    try:
+                        await bot.restrict_chat_member(
+                            chat_id=chat_id,
+                            user_id=user_id,
+                            permissions=ChatPermissions(can_send_messages=False),
+                            until_date=until,
+                        )
+                    except Exception as ex:
+                        logger.error("Failed to mute member for flood: %s", ex)
+
+                    await reset_warnings(user_id, chat_id)
+                    await log_violation(user_id, chat_id, username, reason_ru, raw_text or "[Стикер]", "mute_24h")
+
+                    mute_text = (
+                        f"🔇 <b>{username} отправлен(а) в мут на 24 часа!</b>\n\n"
+                        f"Причина: повторный флуд короткими сообщениями / стикерами (получено <b>2/2 предупреждений</b>).\n"
+                        f"Статус зафиксирован в приложении <b>Ботик</b>."
+                    )
+
+                    if botik_thread_id is not None:
+                        try:
+                            await bot.send_message(
+                                chat_id=chat_id,
+                                message_thread_id=botik_thread_id if botik_thread_id != 0 else None,
+                                text=mute_text,
+                                reply_markup=make_group_keyboard(user_id, chat_id)
+                            )
+                        except Exception:
+                            pass
+
+                    try:
+                        await bot.send_message(
+                            chat_id=chat_id,
+                            message_thread_id=thread_id if thread_id != 0 else None,
+                            text=mute_text,
+                            reply_markup=make_group_keyboard(user_id, chat_id)
+                        )
+                    except Exception:
+                        pass
+
+                    try:
+                        await bot.send_message(
+                            chat_id=user_id,
+                            text=f"🔇 Вам выдан мут на 24 часа за повторный флуд короткими сообщениями или стикерами (2/2 предупреждений).",
+                            reply_markup=make_private_keyboard(user_id, chat_id)
+                        )
+                    except Exception:
+                        pass
+
+                return
+        else:
+            if raw_text and len(raw_text) >= 3:
+                _short_flood_history.pop(flood_key, None)
+
+    # Если это был стикер (и флуда нет), дальше текстовую модерацию не запускаем
+    if is_sticker:
+        return
+
+    # 3. Если это не текстовое сообщение или системная команда:
+    text = raw_text
     if not text or text.startswith("/"):
+        return
+    if len(text) < 3 and not ("http://" in text or "https://" in text):
         return
 
     await increment_stat('checked_messages')

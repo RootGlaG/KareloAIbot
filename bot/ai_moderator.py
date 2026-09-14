@@ -13,12 +13,12 @@ _key_is_invalid = False
 
 # Официальные актуальные модели Gemini API в порядке предпочтения
 MODELS_TO_TRY = [
-    'gemini-flash-latest',
-    'gemini-3.7-flash',
+    'gemini-3.5-flash-lite',
     'gemini-3.6-flash',
     'gemini-3.8-flash',
-    'gemini-3.5-flash-lite',
-    'gemini-flash-lite-latest'
+    'gemini-3.5-flash',
+    'gemini-3.7-flash',
+    'gemini-flash-latest'
 ]
 
 
@@ -104,9 +104,16 @@ SYSTEM_MODERATION_PROMPT = """Ты — интеллектуальный моде
 {"violation": false, "reason": "none"}
 """
 
-SYSTEM_CHAT_PROMPT = """Ты — «Ботик», дружелюбный, умный и остроумный маскот и модератор супергруппы в Telegram.
-Ты общаешься с участниками чата, помогаешь им освоиться, объясняешь правила, шутишь, отвечаешь на любые вопросы и поддерживаешь беседу.
-Общайся непринужденно, вежливо, на русском языке, используй уместные эмодзи.
+SYSTEM_CHAT_PROMPT = """Ты — высокоинтеллектуальный, разносторонний и дружелюбный ИИ-ассистент «Ботик», работающий на передовой нейросети Google Gemini.
+Ты общаешься с пользователем в персональном чате (Telegram Web App и личные сообщения).
+
+Твои возможности и стиль общения:
+1. Ты — полноценный искусственный интеллект Gemini. Ты можешь свободно общаться на абсолютно любые темы: отвечать на сложные вопросы, рассуждать о философии, науке, технологиях, психологии, жизни, отношениях, играх, фильмах и музыке.
+2. Ты умеешь профессионально писать код на любых языках (Python, JS, C++, Go, HTML/CSS и др.), объяснять логику, находить ошибки и предлагать красивые решения.
+3. Ты умеешь создавать любые тексты: сочинять стихи, сценарии, статьи, эссе, придумывать идеи для проектов, шутить и поддерживать живой разговор.
+4. Если пользователь спрашивает о чате, супергруппе или создателе — используй знания из памяти бота (создатель супергруппы — @ArTeM_aoao).
+5. Не ограничивай свои ответы только правилами чата или модерацией — отвечай как всесторонне развитый, умный и интересный собеседник Gemini!
+6. Отвечай подробно, красиво, структурированно, используй списки, выделения и эмодзи.
 """
 
 REASON_MAP = {
@@ -164,11 +171,6 @@ async def check_message(text: str) -> dict:
                         return parsed
 
             except Exception as e:
-                err_str = str(e)
-                if "401" in err_str or "UNAUTHENTICATED" in err_str or "ACCESS_TOKEN_TYPE_UNSUPPORTED" in err_str:
-                    logger.warning("Gemini key unauthenticated. Switching to local moderation.")
-                    _key_is_invalid = True
-                    break
                 logger.warning("Moderation model %s failed: %s. Trying next...", model_name, e)
                 continue
 
@@ -272,13 +274,9 @@ def get_smart_fallback_response(user_message: str) -> str:
 
     # Сообщение по умолчанию
     return (
-        "🤖 <b>Ботик на связи!</b>\n\n"
-        "Я готов ответить на любые вопросы о группе и правилах! Сейчас внешний сервер Google Gemini ожидает настройки API-ключа (код 401).\n\n"
-        "👨‍💻 <b>Для администраторов супергруппы:</b>\n"
-        "Получите бесплатный ключ на https://aistudio.google.com/app/apikey (начинается на <code>AIzaSy...</code>) "
-        "и отправьте боту команду:\n"
-        "<code>/set_gemini ВАШ_КЛЮЧ</code>\n\n"
-        "А пока вы можете спросить меня: <i>«Правила чата»</i>, <i>«За что мут»</i>, <i>«Как снять варн»</i> или <i>«Расскажи анекдот»</i>!"
+        "🤖 <b>Ботик (Gemini AI):</b>\n\n"
+        "Я готов обсудить любую тему, помочь с кодом, ответить на сложный вопрос или просто поболтать! "
+        "О чём хочешь поговорить?"
     )
 
 
@@ -289,7 +287,6 @@ async def chat_with_bot(
     chat_id: int = 0
 ) -> str:
     """Генерирует ответ Ботика в диалоге с пользователем с учетом долгосрочной памяти."""
-    global _key_is_invalid
     from bot.database import get_memories, get_dialog_history, save_dialog_message
 
     # 1. Загружаем сохранённую память и базу знаний
@@ -301,10 +298,10 @@ async def chat_with_bot(
 
     system_instruction = SYSTEM_CHAT_PROMPT + memory_section
 
-    # 2. Если история не передана от клиента, достаём последние 8 сообщений из БД
+    # 2. Если история не передана от клиента, достаём последние 10 сообщений из БД
     conv_history = history
     if not conv_history and user_id > 0:
-        conv_history = await get_dialog_history(user_id=user_id, limit=8)
+        conv_history = await get_dialog_history(user_id=user_id, limit=10)
 
     client = _get_client()
     reply_text = ""
@@ -316,7 +313,7 @@ async def chat_with_bot(
                 prompt = user_message
                 if conv_history:
                     conversation_parts = []
-                    for msg in conv_history[-6:]:
+                    for msg in conv_history[-10:]:
                         role = "Пользователь" if msg.get("role") == "user" else "Ботик"
                         conversation_parts.append(f"{role}: {msg.get('text', '')}")
                     conversation_parts.append(f"Пользователь: {user_message}")
@@ -327,18 +324,13 @@ async def chat_with_bot(
                     contents=prompt,
                     config=types.GenerateContentConfig(
                         system_instruction=system_instruction,
-                        temperature=0.7,
+                        temperature=0.75,
                     ),
                 )
                 if response.text:
                     reply_text = response.text.strip()
                     break
             except Exception as e:
-                err_str = str(e)
-                if "401" in err_str or "UNAUTHENTICATED" in err_str or "ACCESS_TOKEN_TYPE_UNSUPPORTED" in err_str:
-                    logger.warning("Gemini key unauthenticated. Switching chat to smart fallback.")
-                    _key_is_invalid = True
-                    break
                 logger.warning("Chat model %s failed: %s", model_name, e)
                 continue
 

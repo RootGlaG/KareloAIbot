@@ -391,6 +391,23 @@
             border-bottom-left-radius: 4px;
             border: 1px solid var(--border-color);
         }
+        .chat-bubble.bot pre {
+            background: rgba(0, 0, 0, 0.35);
+            padding: 8px 10px;
+            border-radius: 6px;
+            overflow-x: auto;
+            font-family: 'Consolas', 'Courier New', monospace;
+            font-size: 12px;
+            margin: 6px 0;
+            border: 1px solid var(--border-color);
+        }
+        .chat-bubble.bot code {
+            background: rgba(0, 0, 0, 0.25);
+            padding: 2px 5px;
+            border-radius: 4px;
+            font-family: 'Consolas', 'Courier New', monospace;
+            font-size: 12px;
+        }
         .chat-bubble.user {
             align-self: flex-end;
             background-color: var(--accent-color);
@@ -952,18 +969,18 @@
             <div class="chat-container">
                 <div class="chat-messages" id="chat-messages">
                     <div class="chat-bubble bot">
-                        👋 Привет! Я <b>Ботик</b> — ИИ-модератор супергруппы.<br><br>
-                        Я слежу за порядком в чате и могу ответить на любые вопросы. Чем могу помочь?
+                        👋 Привет! Я <b>Ботик</b> на базе нейросети <b>Google Gemini</b>! 🤖✨<br><br>
+                        Со мной можно болтать обо всём: задавать любые вопросы, писать код, придумывать идеи, переводить тексты или обсуждать правила группы. Чем помочь?
                     </div>
                 </div>
-                <div id="chat-typing" class="chat-typing">Ботик печатает... 💭</div>
+                <div id="chat-typing" class="chat-typing">Gemini думает... 💭</div>
 
                 <!-- Компактные подсказки -->
                 <div class="chat-suggestions-bar">
-                    <button class="chat-sug-chip" onclick="askQuick('Правила чата')">📜 Правила</button>
-                    <button class="chat-sug-chip" onclick="askQuick('За что дают мут?')">🔇 За что мут?</button>
-                    <button class="chat-sug-chip" onclick="askQuick('Как снять предупреждение?')">⚠️ Снять варн</button>
-                    <button class="chat-sug-chip" onclick="askQuick('Расскажи анекдот')">😄 Анекдот</button>
+                    <button class="chat-sug-chip" onclick="askQuick('Привет! Расскажи о себе и что ты умеешь как Gemini?')">✨ О Gemini</button>
+                    <button class="chat-sug-chip" onclick="askQuick('Напиши красивый код на Python для примера')">💻 Напиши код</button>
+                    <button class="chat-sug-chip" onclick="askQuick('Расскажи интересный научный факт или шутку')">🧠 Интересный факт</button>
+                    <button class="chat-sug-chip" onclick="askQuick('Какие правила в нашей супергруппе?')">📜 Правила группы</button>
                 </div>
 
                 <div class="chat-input-bar">
@@ -1718,11 +1735,46 @@
             }
         }
 
+        function escapeHtml(str) {
+            return String(str || '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;');
+        }
+
+        function formatAiResponse(raw) {
+            if (!raw) return '';
+            let s = raw;
+            // 1. Кодовые блоки ```lang\ncode\n```
+            s = s.replace(/```([a-zA-Z0-9_-]*)\n([\s\S]*?)```/g, function(match, lang, code) {
+                return `<pre><code class="lang-${lang}">${escapeHtml(code.trim())}</code></pre>`;
+            });
+            // 2. Однострочный код `code`
+            s = s.replace(/`([^`\n]+)`/g, function(match, code) {
+                return `<code>${escapeHtml(code)}</code>`;
+            });
+            // 3. Жирный текст **text**
+            s = s.replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>');
+            // 4. Курсив *text*
+            s = s.replace(/(^|[^\*])\*([^\*\n]+)\*([^\*]|$)/g, '$1<i>$2</i>$3');
+            // 5. Маркированные списки
+            s = s.replace(/^[ \t]*[-*•][ \t]+(.+)$/gm, '• $1');
+            // 6. Переносы строк
+            s = s.replace(/\n/g, '<br>');
+            return s;
+        }
+
         function appendChatBubble(text, sender) {
             const container = document.getElementById('chat-messages');
             const bubble = document.createElement('div');
             bubble.className = `chat-bubble ${sender}`;
-            bubble.innerHTML = text.replace(/\n/g, '<br>');
+            if (sender === 'bot') {
+                bubble.innerHTML = formatAiResponse(text);
+            } else {
+                bubble.textContent = text;
+            }
             container.appendChild(bubble);
             container.scrollTop = container.scrollHeight;
         }
