@@ -1,11 +1,15 @@
 import aiosqlite
 import datetime
+import json
 import logging
+import os
 from typing import Optional, Dict, Any, List
 
 from bot.config import DB_PATH, ADMIN_IDS
 
 logger = logging.getLogger(__name__)
+
+MEMBERS_CACHE_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "members_cache.json")
 
 
 async def init_db() -> None:
@@ -105,6 +109,10 @@ async def init_db() -> None:
 
         await db.commit()
     logger.info("Database initialized at %s", DB_PATH)
+    try:
+        await load_members_cache()
+    except Exception as e:
+        logger.warning("Initial load_members_cache error: %s", e)
 
 
 async def upsert_member(
@@ -148,6 +156,10 @@ async def upsert_member(
             username, username, full_name, full_name, 1 if is_admin else 0, now, photo_url, photo_url
         ))
         await db.commit()
+    try:
+        await save_members_cache()
+    except Exception:
+        pass
 
 
 async def get_all_members(chat_id: Optional[int] = None) -> List[Dict[str, Any]]:
@@ -170,6 +182,72 @@ async def get_all_members(chat_id: Optional[int] = None) -> List[Dict[str, Any]]
         async with db.execute(query, params) as cur:
             rows = await cur.fetchall()
             return [dict(r) for r in rows]
+
+
+async def load_members_cache() -> int:
+    """Загружает сохраненных участников из members_cache.json в базу данных при старте."""
+    if not os.path.exists(MEMBERS_CACHE_FILE):
+        return 0
+    try:
+        with open(MEMBERS_CACHE_FILE, "r", encoding="utf-8") as f:
+            members = json.load(f)
+        if not isinstance(members, list):
+            return 0
+        loaded = 0
+        now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        async with aiosqlite.connect(DB_PATH) as db:
+            for m in members:
+                uid = m.get("user_id")
+                cid = m.get("chat_id", -1003955632241)
+                if not uid:
+                    continue
+                username = m.get("username", "")
+                full_name = m.get("full_name", "")
+                is_admin = 1 if m.get("is_admin") else 0
+                last_seen = m.get("last_seen", now)
+                photo_url = m.get("photo_url", "")
+                await db.execute("""
+                    INSERT INTO chat_members (user_id, chat_id, username, full_name, is_admin, last_seen, photo_url)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(user_id, chat_id) DO UPDATE SET
+                        username = CASE WHEN ? != '' THEN ? ELSE username END,
+                        full_name = CASE WHEN ? != '' THEN ? ELSE full_name END,
+                        is_admin = CASE WHEN ? = 1 THEN 1 ELSE is_admin END,
+                        photo_url = CASE WHEN ? != '' THEN ? ELSE photo_url END
+                """, (
+                    uid, cid, username, full_name, is_admin, last_seen, photo_url,
+                    username, username, full_name, full_name, is_admin, photo_url, photo_url
+                ))
+                loaded += 1
+            await db.commit()
+        logger.info("Loaded %d members from cache %s into database", loaded, MEMBERS_CACHE_FILE)
+        return loaded
+    except Exception as e:
+        logger.error("Failed to load members cache: %s", e)
+        return 0
+
+
+async def save_members_cache() -> None:
+    """Сохраняет всех участников из базы данных в members_cache.json для персистентности."""
+    try:
+        members = await get_all_members()
+        if not members:
+            return
+        clean_members = []
+        for m in members:
+            clean_members.append({
+                "user_id": m.get("user_id"),
+                "chat_id": m.get("chat_id", -1003955632241),
+                "username": m.get("username", ""),
+                "full_name": m.get("full_name", ""),
+                "is_admin": 1 if m.get("is_admin") else 0,
+                "last_seen": m.get("last_seen", ""),
+                "photo_url": m.get("photo_url", "")
+            })
+        with open(MEMBERS_CACHE_FILE, "w", encoding="utf-8") as f:
+            json.dump(clean_members, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        logger.warning("Failed to save members cache: %s", e)
 
 
 async def get_member_by_username(username: str, chat_id: Optional[int] = None) -> Optional[Dict[str, Any]]:
@@ -210,7 +288,11 @@ async def add_manual_member(username: str, full_name: str, chat_id: int) -> int:
                 full_name = ?
         """, (pseudo_id, chat_id, clean_username, full_name or f"@{clean_username}", now, clean_username, full_name or f"@{clean_username}"))
         await db.commit()
-        return pseudo_id
+    try:
+        await save_members_cache()
+    except Exception:
+        pass
+    return pseudo_id
 
 
 async def set_botik_thread(chat_id: int, thread_id: int) -> None:

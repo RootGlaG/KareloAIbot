@@ -66,6 +66,11 @@ _short_flood_history: dict[tuple[int, int], list[float]] = {}
 FLOOD_WINDOW_SECONDS = 180.0  # Окно: 3 минуты (1-3 мин)
 FLOOD_LIMIT = 3               # Лимит: 3 сообщения подряд
 
+# Недавние текстовые сообщения пользователей для проверки на дубликаты и смысловые повторы:
+# (chat_id, user_id) -> [(timestamp, text)]
+_user_recent_messages: dict[tuple[int, int], list[tuple[float, str]]] = {}
+SIMILARITY_WINDOW_SECONDS = 300.0  # Окно: 5 минут для поиска повторов
+
 
 def get_webapp_url() -> str:
     return WEB_APP_URL
@@ -974,13 +979,24 @@ async def group_message_handler(message: Message, bot: Bot) -> None:
     if is_admin and not MODERATE_ALL:
         return
 
+    # Проверка на смысловые повторы и дубликаты
+    user_msg_key = (chat_id, user_id)
+    recent_entries = [
+        item for item in _user_recent_messages.get(user_msg_key, [])
+        if (now_ts - item[0]) <= SIMILARITY_WINDOW_SECONDS
+    ]
+    recent_user_texts = [item[1] for item in recent_entries]
+
     try:
-        result = await check_message(text)
+        result = await check_message(text, recent_messages=recent_user_texts)
     except Exception as e:
         logger.error("AI check error: %s", e)
         return
 
     if not result.get("violation"):
+        # Если нарушений нет — добавляем сообщение в историю пользователя
+        recent_entries.append((now_ts, text))
+        _user_recent_messages[user_msg_key] = recent_entries[-6:]
         return
 
     reason = result.get("reason", "none")

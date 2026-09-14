@@ -1,3 +1,4 @@
+import difflib
 import json
 import logging
 import re
@@ -22,15 +23,42 @@ MODELS_TO_TRY = [
 ]
 
 
+def normalize_text(text: str) -> str:
+    """Удаляет знаки препинания, лишние пробелы и приводит к нижнему регистру."""
+    t = text.lower().strip()
+    t = re.sub(r'[^\w\s]', '', t)
+    return re.sub(r'\s+', ' ', t).strip()
+
+
+def calculate_similarity(text1: str, text2: str) -> float:
+    """Вычисляет степень сходства двух текстов (от 0.0 до 1.0)."""
+    norm1 = normalize_text(text1)
+    norm2 = normalize_text(text2)
+    if not norm1 or not norm2:
+        return 0.0
+    if norm1 == norm2:
+        return 1.0
+
+    seq_ratio = difflib.SequenceMatcher(None, norm1, norm2).ratio()
+    words1 = set(norm1.split())
+    words2 = set(norm2.split())
+    if words1 and words2:
+        intersection = len(words1 & words2)
+        union = len(words1 | words2)
+        jaccard_ratio = intersection / union if union > 0 else 0.0
+    else:
+        jaccard_ratio = 0.0
+
+    return max(seq_ratio, jaccard_ratio)
+
+
 def _get_client() -> Optional[genai.Client]:
-    global _client, _key_is_invalid
-    if _key_is_invalid:
+    global _client
+    key = (config.GEMINI_API_KEY or "").strip()
+    if not key:
+        logger.warning("GEMINI_API_KEY is not set — AI features disabled.")
         return None
     if _client is None:
-        key = config.GEMINI_API_KEY.strip() if config.GEMINI_API_KEY else ""
-        if not key:
-            logger.warning("GEMINI_API_KEY is not set — AI features disabled.")
-            return None
         try:
             _client = genai.Client(api_key=key)
         except Exception as e:
@@ -94,12 +122,15 @@ SYSTEM_MODERATION_PROMPT = """Ты — интеллектуальный моде
 Категории нарушений:
 1. "profanity" — явный или скрытый русский мат, грубые нецензурные ругательства, обсценная лексика.
 2. "toxicity" — прямые оскорбления собеседников, унижения, агрессия, буллинг, пожелания вреда.
-3. "spam" — спам, повторяющиеся бессмысленные сообщения, флуд символами, реклама казино/крипты/скама.
+3. "spam" — спам, реклама казино/крипты/скама, бессмысленный флуд.
 4. "ad" — несанкционированные ссылки на сторонние Telegram-каналы, группы, сайты, продажу товаров или услуг.
-5. "none" — обычное нормальное общение, юмор, вопросы, обсуждения без мата и оскорблений.
+5. "duplicate" — сообщение повторяет смысл, суть или вопрос недавнего сообщения того же пользователя (семантический дубликат, повторный вопрос, флуд одинаковыми или похожими фразами).
+6. "none" — обычное нормальное общение, юмор, вопросы, обсуждения без нарушений и повторов.
 
 Формат ответа СТРОГО в виде JSON без markdown-кавычек:
 {"violation": true, "reason": "profanity"}
+или
+{"violation": true, "reason": "duplicate"}
 или
 {"violation": false, "reason": "none"}
 """
@@ -121,6 +152,7 @@ REASON_MAP = {
     "spam": "Спам и флуд",
     "profanity": "Нецензурная лексика (мат)",
     "ad": "Несанкционированная реклама",
+    "duplicate": "Повторяющиеся / похожие по смыслу сообщения",
     "none": "—",
 }
 
@@ -137,17 +169,40 @@ SPAM_REGEX = re.compile(
 )
 
 
-async def check_message(text: str) -> dict:
+async def check_message(text: str, recent_messages: Optional[List[str]] = None) -> dict:
     """Анализирует текст сообщения на нарушения с помощью Gemini или локального фильтра."""
-    global _key_is_invalid
-    client = _get_client()
+    clean_text = text.strip()
 
+    # 1. Быстрая локальная проверка на одинаковые или похожие сообщения
+    if recent_messages:
+        for prev in recent_messages:
+            prev_clean = prev.strip()
+            if not prev_clean:
+                continue
+            sim = calculate_similarity(clean_text, prev_clean)
+            if sim >= 0.72 and len(clean_text) >= 4:
+                logger.info("Local duplicate detection: similarity %.2f between '%s' and '%s'", sim, clean_text[:30], prev_clean[:30])
+                return {"violation": True, "reason": "duplicate", "similarity": sim}
+
+    # 2. ИИ-проверка через Gemini
+    client = _get_client()
     if client is not None:
+        prompt_content = clean_text
+        if recent_messages and len(recent_messages) > 0:
+            prev_formatted = "\n".join([f"- «{m[:150]}»" for m in recent_messages[-3:]])
+            prompt_content = (
+                f"Предыдущие недавние сообщения этого пользователя:\n{prev_formatted}\n\n"
+                f"Новое сообщение пользователя:\n«{clean_text}»\n\n"
+                f"Проверь новое сообщение на нарушения. Если новое сообщение несёт тот же самый смысл, вопрос или суть, "
+                f"что и любое из предыдущих (семантический повтор/дубликат/флуд похожими фразами), укажи "
+                f"\"violation\": true, \"reason\": \"duplicate\"."
+            )
+
         for model_name in MODELS_TO_TRY:
             try:
                 response = await client.aio.models.generate_content(
                     model=model_name,
-                    contents=text,
+                    contents=prompt_content,
                     config=types.GenerateContentConfig(
                         system_instruction=SYSTEM_MODERATION_PROMPT,
                         temperature=0.1,
@@ -161,25 +216,25 @@ async def check_message(text: str) -> dict:
 
                 try:
                     parsed = json.loads(raw)
-                    logger.info("AI check (%s) for '%s...': %s", model_name, text[:40], parsed)
+                    logger.info("AI check (%s) for '%s...': %s", model_name, clean_text[:40], parsed)
                     return parsed
                 except json.JSONDecodeError:
                     match = _JSON_RE.search(raw)
                     if match:
                         parsed = json.loads(match.group())
-                        logger.info("AI check regex (%s) for '%s...': %s", model_name, text[:40], parsed)
+                        logger.info("AI check regex (%s) for '%s...': %s", model_name, clean_text[:40], parsed)
                         return parsed
 
             except Exception as e:
                 logger.warning("Moderation model %s failed: %s. Trying next...", model_name, e)
                 continue
 
-    # Локальная резервная проверка (если Gemini недоступен)
-    if MAT_REGEX.search(text):
-        logger.info("Local fallback detected profanity: %s...", text[:30])
+    # 3. Локальная резервная проверка (если Gemini недоступен)
+    if MAT_REGEX.search(clean_text):
+        logger.info("Local fallback detected profanity: %s...", clean_text[:30])
         return {"violation": True, "reason": "profanity"}
-    if SPAM_REGEX.search(text):
-        logger.info("Local fallback detected spam: %s...", text[:30])
+    if SPAM_REGEX.search(clean_text):
+        logger.info("Local fallback detected spam: %s...", clean_text[:30])
         return {"violation": True, "reason": "spam"}
 
     return {"violation": False, "reason": "none"}

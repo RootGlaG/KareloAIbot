@@ -58,7 +58,26 @@ async def main() -> None:
     await site.start()
     logger.info("Web App & API server running on http://%s:%s", WEB_HOST, WEB_PORT)
 
-    # 5. Запускаем Telegram Polling
+    # 5. Синхронизируем администраторов чата и восстанавливаем участников
+    try:
+        from bot.database import upsert_member, save_members_cache
+        default_chat_id = -1003955632241
+        admins = await bot.get_chat_administrators(default_chat_id)
+        for a in admins:
+            if not a.user.is_bot:
+                await upsert_member(
+                    user_id=a.user.id,
+                    chat_id=default_chat_id,
+                    username=a.user.username or "",
+                    full_name=a.user.full_name or f"@{a.user.username}",
+                    is_admin=True
+                )
+        await save_members_cache()
+        logger.info("Startup sync: loaded %d chat administrators into database", len(admins))
+    except Exception as e:
+        logger.warning("Startup admin sync skipped: %s", e)
+
+    # 6. Запускаем Telegram Polling
     try:
         await dp.start_polling(
             bot,
