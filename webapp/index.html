@@ -1705,7 +1705,7 @@
                 const res = await fetch(`${API_BASE}/api/chat`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ message: text, history: chatHistory })
+                    body: JSON.stringify({ message: text, history: chatHistory, user_id: fallbackId, chat_id: queryCid || 0 })
                 });
                 const data = await res.json();
                 typingEl.style.display = 'none';

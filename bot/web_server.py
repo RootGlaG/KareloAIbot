@@ -270,10 +270,12 @@ async def api_chat(request: web.Request) -> web.Response:
         body = await request.json()
         message = body.get("message", "").strip()
         history = body.get("history", [])
+        user_id = int(body.get("user_id", 0)) if body.get("user_id") else 0
+        chat_id = int(body.get("chat_id", 0)) if body.get("chat_id") else 0
         if not message:
             return setup_cors(web.json_response({"reply": "Напиши мне что-нибудь!"}))
 
-        reply = await chat_with_bot(message, history)
+        reply = await chat_with_bot(message, history, user_id=user_id, chat_id=chat_id)
         return setup_cors(web.json_response({"reply": reply}))
     except Exception as e:
         logger.error("api_chat error: %s", e)

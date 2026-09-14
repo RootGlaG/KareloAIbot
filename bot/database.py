@@ -68,6 +68,41 @@ async def init_db() -> None:
         """)
         await db.execute("INSERT OR IGNORE INTO bot_stats (key, value) VALUES ('checked_messages', 0)")
         await db.execute("INSERT OR IGNORE INTO bot_stats (key, value) VALUES ('total_violations', 0)")
+
+        # Таблица долгосрочной памяти (факты, правила, инструкции, пользовательские заметки)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS bot_memory (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id    INTEGER DEFAULT 0,
+                chat_id    INTEGER DEFAULT 0,
+                category   TEXT DEFAULT 'fact',
+                key_phrase TEXT NOT NULL,
+                content    TEXT NOT NULL,
+                created_at TIMESTAMP NOT NULL,
+                updated_at TIMESTAMP NOT NULL
+            )
+        """)
+
+        # Таблица истории диалогов для контекстной памяти
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS chat_dialog_history (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id    INTEGER NOT NULL,
+                chat_id    INTEGER NOT NULL DEFAULT 0,
+                role       TEXT NOT NULL,
+                message    TEXT NOT NULL,
+                created_at TIMESTAMP NOT NULL
+            )
+        """)
+
+        # Таблица динамических настроек бота (например, webhook Google Таблицы)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS bot_settings (
+                key   TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            )
+        """)
+
         await db.commit()
     logger.info("Database initialized at %s", DB_PATH)
 
@@ -359,3 +394,127 @@ async def get_admin_stats(chat_id: Optional[int] = None) -> Dict[str, Any]:
             "members": members,
             "recent_violations": recent_violations,
         }
+
+
+# ──────────────────────────────────────────────
+# ДОЛГОСРОЧНАЯ ПАМЯТЬ БОТА (BOT MEMORY)
+# ──────────────────────────────────────────────
+async def save_memory(
+    key_phrase: str,
+    content: str,
+    category: str = "fact",
+    user_id: int = 0,
+    chat_id: int = 0
+) -> int:
+    """Сохраняет или обновляет факт в долговременной памяти бота."""
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute("""
+            INSERT INTO bot_memory (user_id, chat_id, category, key_phrase, content, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (user_id, chat_id, category, key_phrase.strip(), content.strip(), now, now)) as cur:
+            mem_id = cur.lastrowid or 0
+        await db.commit()
+        return mem_id
+
+
+async def get_memories(
+    user_id: Optional[int] = None,
+    chat_id: Optional[int] = None,
+    category: Optional[str] = None,
+    limit: int = 50
+) -> List[Dict[str, Any]]:
+    """Получает факты из памяти бота с опциональной фильтрацией."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        clauses = []
+        params: list = []
+
+        if user_id is not None and user_id > 0:
+            clauses.append("(user_id = ? OR user_id = 0)")
+            params.append(user_id)
+        if chat_id is not None and chat_id != 0:
+            clauses.append("(chat_id = ? OR chat_id = 0)")
+            params.append(chat_id)
+        if category:
+            clauses.append("category = ?")
+            params.append(category)
+
+        where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
+        query = f"SELECT * FROM bot_memory {where} ORDER BY updated_at DESC LIMIT ?"
+        params.append(limit)
+
+        async with db.execute(query, params) as cur:
+            return [dict(r) for r in await cur.fetchall()]
+
+
+async def delete_memory(memory_id: int) -> bool:
+    """Удаляет воспоминание по ID."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute("DELETE FROM bot_memory WHERE id = ?", (memory_id,)) as cur:
+            deleted = cur.rowcount > 0
+        await db.commit()
+        return deleted
+
+
+async def clear_memories(chat_id: Optional[int] = None) -> int:
+    """Очищает память бота для указанного чата или глобально."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        if chat_id:
+            async with db.execute("DELETE FROM bot_memory WHERE chat_id = ?", (chat_id,)) as cur:
+                count = cur.rowcount
+        else:
+            async with db.execute("DELETE FROM bot_memory") as cur:
+                count = cur.rowcount
+        await db.commit()
+        return count
+
+
+# ──────────────────────────────────────────────
+# ИСТОРИЯ ДИАЛОГОВ (КОНТЕКСТНАЯ ПАМЯТЬ)
+# ──────────────────────────────────────────────
+async def save_dialog_message(user_id: int, chat_id: int, role: str, message: str) -> None:
+    """Сохраняет сообщение в историю диалогов для долгосрочного контекста."""
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("""
+            INSERT INTO chat_dialog_history (user_id, chat_id, role, message, created_at)
+            VALUES (?, ?, ?, ?, ?)
+        """, (user_id, chat_id, role, message, now))
+        await db.commit()
+
+
+async def get_dialog_history(user_id: int, limit: int = 10) -> List[Dict[str, str]]:
+    """Возвращает последние сообщения пользователя и бота для контекста Gemini."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        query = """
+            SELECT role, message FROM chat_dialog_history
+            WHERE user_id = ?
+            ORDER BY id DESC LIMIT ?
+        """
+        async with db.execute(query, (user_id, limit)) as cur:
+            rows = await cur.fetchall()
+            return [{"role": r["role"], "text": r["message"]} for r in reversed(rows)]
+
+
+# ──────────────────────────────────────────────
+# НАСТРОЙКИ БОТА (GOOGLE SHEETS URL И ДР.)
+# ──────────────────────────────────────────────
+async def get_bot_setting(key: str, default: str = "") -> str:
+    """Возвращает значение настройки из БД."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute("SELECT value FROM bot_settings WHERE key = ?", (key,)) as cur:
+            row = await cur.fetchone()
+            return row[0] if row else default
+
+
+async def set_bot_setting(key: str, value: str) -> None:
+    """Сохраняет или обновляет настройку в БД."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("""
+            INSERT INTO bot_settings (key, value) VALUES (?, ?)
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value
+        """, (key, value))
+        await db.commit()
+

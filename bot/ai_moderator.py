@@ -13,10 +13,12 @@ _key_is_invalid = False
 
 # Официальные актуальные модели Gemini API в порядке предпочтения
 MODELS_TO_TRY = [
-    'gemini-2.0-flash',
-    'gemini-1.5-flash',
-    'gemini-1.5-flash-8b',
-    'gemini-1.5-pro'
+    'gemini-flash-latest',
+    'gemini-3.7-flash',
+    'gemini-3.6-flash',
+    'gemini-3.8-flash',
+    'gemini-3.5-flash-lite',
+    'gemini-flash-lite-latest'
 ]
 
 
@@ -280,19 +282,41 @@ def get_smart_fallback_response(user_message: str) -> str:
     )
 
 
-async def chat_with_bot(user_message: str, history: Optional[List[Dict[str, str]]] = None) -> str:
-    """Генерирует ответ Ботика в диалоге с пользователем."""
+async def chat_with_bot(
+    user_message: str,
+    history: Optional[List[Dict[str, str]]] = None,
+    user_id: int = 0,
+    chat_id: int = 0
+) -> str:
+    """Генерирует ответ Ботика в диалоге с пользователем с учетом долгосрочной памяти."""
     global _key_is_invalid
+    from bot.database import get_memories, get_dialog_history, save_dialog_message
+
+    # 1. Загружаем сохранённую память и базу знаний
+    memories = await get_memories(user_id=user_id, chat_id=chat_id, limit=20)
+    memory_section = ""
+    if memories:
+        mem_lines = [f"• [{m.get('category', 'факт')}]: {m.get('key_phrase')}: {m.get('content')}" for m in memories]
+        memory_section = "\n\nДолговременная память и база знаний супергруппы:\n" + "\n".join(mem_lines)
+
+    system_instruction = SYSTEM_CHAT_PROMPT + memory_section
+
+    # 2. Если история не передана от клиента, достаём последние 8 сообщений из БД
+    conv_history = history
+    if not conv_history and user_id > 0:
+        conv_history = await get_dialog_history(user_id=user_id, limit=8)
+
     client = _get_client()
+    reply_text = ""
 
     if client is not None:
         for model_name in MODELS_TO_TRY:
             try:
                 # Формируем контекст беседы
                 prompt = user_message
-                if history:
+                if conv_history:
                     conversation_parts = []
-                    for msg in history[-6:]:
+                    for msg in conv_history[-6:]:
                         role = "Пользователь" if msg.get("role") == "user" else "Ботик"
                         conversation_parts.append(f"{role}: {msg.get('text', '')}")
                     conversation_parts.append(f"Пользователь: {user_message}")
@@ -302,12 +326,13 @@ async def chat_with_bot(user_message: str, history: Optional[List[Dict[str, str]
                     model=model_name,
                     contents=prompt,
                     config=types.GenerateContentConfig(
-                        system_instruction=SYSTEM_CHAT_PROMPT,
+                        system_instruction=system_instruction,
                         temperature=0.7,
                     ),
                 )
                 if response.text:
-                    return response.text.strip()
+                    reply_text = response.text.strip()
+                    break
             except Exception as e:
                 err_str = str(e)
                 if "401" in err_str or "UNAUTHENTICATED" in err_str or "ACCESS_TOKEN_TYPE_UNSUPPORTED" in err_str:
@@ -318,7 +343,18 @@ async def chat_with_bot(user_message: str, history: Optional[List[Dict[str, str]
                 continue
 
     # Если Gemini недоступен или выдал ошибку — используем умный фолбэк
-    return get_smart_fallback_response(user_message)
+    if not reply_text:
+        reply_text = get_smart_fallback_response(user_message)
+
+    # 3. Сохраняем сообщение в историю диалогов для долгосрочной памяти
+    if user_id > 0:
+        try:
+            await save_dialog_message(user_id=user_id, chat_id=chat_id, role="user", message=user_message)
+            await save_dialog_message(user_id=user_id, chat_id=chat_id, role="bot", message=reply_text)
+        except Exception:
+            pass
+
+    return reply_text
 
 
 async def format_issue_report(raw_text: str, user_name: str) -> str:

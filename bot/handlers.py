@@ -39,7 +39,18 @@ from bot.database import (
     set_ideas_thread,
     get_ideas_thread,
     upsert_member,
-    add_manual_member
+    add_manual_member,
+    save_memory,
+    get_memories,
+    clear_memories,
+    set_bot_setting,
+    get_bot_setting
+)
+from bot.sheets_sync import (
+    test_sheet_connection,
+    sync_knowledge_from_sheet,
+    append_row_to_sheet,
+    APPS_SCRIPT_CODE
 )
 from bot.config import ADMIN_IDS, WEB_APP_URL, MODERATE_ALL
 
@@ -57,14 +68,18 @@ def get_webapp_url() -> str:
 
 def get_botik_card_text() -> str:
     return (
-        "🤖 <b>ПЕРСОНАЛЬНЫЙ БОТИК v2.5</b>\n\n"
+        "🤖 <b>ПЕРСОНАЛЬНЫЙ БОТИК v3.0</b>\n\n"
         "Личный кабинет каждого участника супергруппы.\n\n"
         "• 👤 <b>Профиль:</b> статус, предупреждения (варны) и история\n"
         "• 💬 <b>ИИ Ботик:</b> умный помощник с нейросетью Gemini\n"
+        "• 🧠 <b>Память:</b> бот запоминает факты и правила группы\n"
         "• 🎮 <b>Тетрис:</b> соревновательная игра прямо в Telegram\n"
         "• 👥 <b>Админка:</b> список участников, аватары и модерация\n\n"
-        "💡 <b>Топик для багов и предложений:</b>\n"
-        "Чтобы привязать ветку «Идеи», напишите в ней команду: <code>/set_ideas</code>\n\n"
+        "💡 <b>Команды для админов:</b>\n"
+        "• <code>/set_ideas</code> — привязать топик «Идеи»\n"
+        "• <code>/remember факт</code> — добавить факт в память бота\n"
+        "• <code>/memory</code> — посмотреть память бота\n"
+        "• <code>/set_sheet</code> — подключить Google Таблицу\n\n"
         "👇 Нажмите кнопку ниже, чтобы открыть ваш личный Ботик:"
     )
 
@@ -480,6 +495,207 @@ async def cmd_set_gemini(message: Message, bot: Bot) -> None:
 
 
 # ──────────────────────────────────────────────
+# /set_sheet — подключение Google Таблицы
+# ──────────────────────────────────────────────
+@router.message(Command("set_sheet"))
+async def cmd_set_sheet(message: Message, bot: Bot) -> None:
+    is_adm = False
+    if message.chat.type in ("group", "supergroup"):
+        is_adm = await is_chat_admin(bot, message.chat.id, message.from_user.id)
+    else:
+        is_adm = message.from_user.id in ADMIN_IDS or message.from_user.id == 5851158445
+
+    if not is_adm:
+        await message.answer("❌ Только администраторы могут подключать Google Таблицу.")
+        return
+
+    args = (message.text or "").replace("/set_sheet", "", 1).strip()
+
+    # Если без аргументов — показать инструкцию
+    if not args:
+        await message.answer(
+            "📊 <b>Подключение Google Таблицы для памяти бота</b>\n\n"
+            "Это добавит боту долгосрочную бесплатную память через Google Sheets!\n\n"
+            "<b>Инструкция (3 шага):</b>\n"
+            "1️⃣ Создайте <a href=\"https://sheets.new\">новую Google Таблицу</a>\n"
+            "2️⃣ Откройте <b>Расширения → Apps Script</b>, вставьте код ниже и разверните как веб-приложение (Доступ: Все)\n"
+            "3️⃣ Скопируйте URL вебхука и отправьте:\n"
+            "<code>/set_sheet https://script.google.com/.../exec</code>\n\n"
+            "📋 <b>Код Apps Script:</b>",
+            disable_web_page_preview=True
+        )
+        # Отправляем код в отдельном сообщении для копирования
+        code_text = APPS_SCRIPT_CODE.strip()
+        if len(code_text) > 4000:
+            code_text = code_text[:4000] + "\n// ... (продолжение в документации)"
+        await message.answer(f"<pre>{code_text}</pre>")
+        return
+
+    # Удаляем сообщение с URL из группы
+    if message.chat.type in ("group", "supergroup"):
+        try:
+            await message.delete()
+        except Exception:
+            pass
+
+    status_msg = await message.answer("⏳ Проверяю подключение к Google Таблице...")
+    ok, details = await test_sheet_connection(args)
+
+    if ok:
+        await set_bot_setting("google_sheet_url", args)
+        await status_msg.edit_text(
+            f"🎉 <b>Google Таблица успешно подключена!</b>\n\n"
+            f"✅ {details}\n\n"
+            f"Теперь бот будет использовать таблицу как дополнительную память.\n"
+            f"Чтобы синхронизировать знания из таблицы: <code>/sync_sheet</code>"
+        )
+    else:
+        await status_msg.edit_text(
+            f"❌ <b>Не удалось подключить таблицу</b>\n\n"
+            f"{details}\n\n"
+            f"Убедитесь, что URL правильный и веб-приложение развёрнуто с доступом «Все»."
+        )
+
+
+# ──────────────────────────────────────────────
+# /sync_sheet — синхронизация знаний из таблицы
+# ──────────────────────────────────────────────
+@router.message(Command("sync_sheet"))
+async def cmd_sync_sheet(message: Message, bot: Bot) -> None:
+    is_adm = False
+    if message.chat.type in ("group", "supergroup"):
+        is_adm = await is_chat_admin(bot, message.chat.id, message.from_user.id)
+    else:
+        is_adm = message.from_user.id in ADMIN_IDS or message.from_user.id == 5851158445
+
+    if not is_adm:
+        await message.answer("❌ Только администраторы могут синхронизировать память.")
+        return
+
+    status_msg = await message.answer("⏳ Синхронизирую базу знаний из Google Таблицы...")
+    ok, count, details = await sync_knowledge_from_sheet()
+
+    if ok:
+        await status_msg.edit_text(
+            f"🧠 <b>Память синхронизирована!</b>\n\n"
+            f"✅ {details}\n\n"
+            f"Бот теперь помнит {count} фактов из таблицы и будет использовать их при ответах."
+        )
+    else:
+        await status_msg.edit_text(
+            f"❌ <b>Ошибка синхронизации</b>\n\n{details}\n\n"
+            f"💡 Сначала подключите таблицу: <code>/set_sheet URL</code>"
+        )
+
+
+# ──────────────────────────────────────────────
+# /remember — добавить факт в память бота
+# ──────────────────────────────────────────────
+@router.message(Command("remember"))
+async def cmd_remember(message: Message, bot: Bot) -> None:
+    is_adm = False
+    if message.chat.type in ("group", "supergroup"):
+        is_adm = await is_chat_admin(bot, message.chat.id, message.from_user.id)
+    else:
+        is_adm = message.from_user.id in ADMIN_IDS or message.from_user.id == 5851158445
+
+    if not is_adm:
+        await message.answer("❌ Только администраторы могут добавлять факты в память.")
+        return
+
+    args = (message.text or "").replace("/remember", "", 1).strip()
+    if not args:
+        await message.answer(
+            "🧠 <b>Как добавить факт в память бота:</b>\n\n"
+            "Напишите: <code>/remember Ваш факт или инструкция</code>\n\n"
+            "Примеры:\n"
+            "• <code>/remember Создатель супергруппы — @ArTeM_aoao</code>\n"
+            "• <code>/remember Правило: нельзя спамить стикерами</code>\n"
+            "• <code>/remember Ботик создан в сентябре 2026</code>"
+        )
+        return
+
+    # Определяем ключевую фразу и содержание
+    if ":" in args:
+        parts = args.split(":", 1)
+        key_phrase = parts[0].strip()
+        content = parts[1].strip()
+    else:
+        key_phrase = args[:60].strip()
+        content = args
+
+    mem_id = await save_memory(
+        key_phrase=key_phrase,
+        content=content,
+        category="fact",
+        user_id=message.from_user.id,
+        chat_id=message.chat.id
+    )
+
+    await message.answer(
+        f"🧠 <b>Запомнил!</b> (ID: {mem_id})\n\n"
+        f"📌 <b>{key_phrase}</b>\n"
+        f"{content}\n\n"
+        f"Теперь буду использовать этот факт при ответах в чате."
+    )
+
+    # Дублируем в Google Таблицу, если подключена
+    try:
+        await append_row_to_sheet(
+            "Память",
+            ["fact", key_phrase, content, str(message.from_user.id)],
+            ["Категория", "Ключ / Тема", "Значение", "Добавил (ID)"]
+        )
+    except Exception:
+        pass
+
+
+# ──────────────────────────────────────────────
+# /memory — показать текущую память бота
+# ──────────────────────────────────────────────
+@router.message(Command("memory"))
+async def cmd_memory(message: Message, bot: Bot) -> None:
+    is_adm = False
+    if message.chat.type in ("group", "supergroup"):
+        is_adm = await is_chat_admin(bot, message.chat.id, message.from_user.id)
+    else:
+        is_adm = message.from_user.id in ADMIN_IDS or message.from_user.id == 5851158445
+
+    if not is_adm:
+        await message.answer("❌ Только администраторы могут просматривать память бота.")
+        return
+
+    args = (message.text or "").replace("/memory", "", 1).strip()
+
+    # /memory clear — очистить память
+    if args.lower() == "clear":
+        count = await clear_memories(chat_id=message.chat.id)
+        await message.answer(f"🗑️ Память очищена! Удалено записей: <b>{count}</b>")
+        return
+
+    memories = await get_memories(chat_id=message.chat.id, limit=20)
+    if not memories:
+        await message.answer(
+            "🧠 <b>Память пуста</b>\n\n"
+            "Добавьте факты командой: <code>/remember ваш факт</code>\n"
+            "Или подключите Google Таблицу: <code>/set_sheet</code>"
+        )
+        return
+
+    lines = []
+    for i, m in enumerate(memories[:15], 1):
+        cat = m.get("category", "факт")
+        key = m.get("key_phrase", "")
+        lines.append(f"{i}. [{cat}] <b>{key}</b>")
+
+    await message.answer(
+        f"🧠 <b>Память бота ({len(memories)} записей):</b>\n\n" +
+        "\n".join(lines) +
+        "\n\n💡 <code>/memory clear</code> — очистить всю память"
+    )
+
+
+# ──────────────────────────────────────────────
 # /start
 # ──────────────────────────────────────────────
 @router.message(CommandStart())
@@ -567,8 +783,8 @@ async def private_chat_handler(message: Message) -> None:
     text = message.text or ""
     if not text or text.startswith("/"):
         return
-    reply = await chat_with_bot(text)
     user_id = message.from_user.id if message.from_user else 0
+    reply = await chat_with_bot(text, user_id=user_id, chat_id=message.chat.id)
     await message.answer(reply, reply_markup=make_private_keyboard(user_id, message.chat.id))
 
 
